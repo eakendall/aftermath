@@ -84,6 +84,7 @@ routine_dx_dist <- function(shape_onset, rate_onset, sx_months) {
 # study dx occurs if there is a study visit between symptom onset and routine dx
 
 
+#### plot distributions ####
 
 shape_test <- 2; scale_test <- 2; sx_test <- 3
 x <- seq(0, 20, 0.1)
@@ -100,42 +101,30 @@ ggplot(dists_test, aes(x = x, y = density, col = dist)) +
   xlab("Months") + ylab("Density") + 
   geom_histogram(data=data.frame(study_schedule), aes(x=study_schedule/30, y = after_stat(density)), color="black", fill="blue", alpha=0.5)
 
+
+#### MLE ####
 # Now we can use MLE to estimate the shape and scale of the gamma distribution of TB onset, given the dx_timing_months data.
 # (For now, assume mean symptom duration and presymptomatic period are known.)
+
+# The probability of diagnosing an individual on day d is a sum of the probabilities that:
+# a) they are routinely diagnosed, or 
+# b) they have symptoms, haven't yet been routinely diagnosed, and get a study visit on day d. 
+prob_dx_day_d <- function(day, shape_onset, scale_onset, sx_months,
+                          study_schedule_1, study_schedule_2, study_schedule_3) {
+  return(
+    d(routine_dx_dist(shape_onset, scale_onset, sx_months))(day/30) + # prob of routine dx on day d 
+    d(convpow(symptom_onset_dist(shape_onset, scale_onset, presymptomatic_mean_months(sx_months)) -
+            routine_dx_after_symptoms(sx_months), 1))(day/30) * # prob of sx but not yet diagnosed...
+      (mean(study_schedule_1 == day) +
+       mean(study_schedule_2 == day) +
+       mean(study_schedule_3 == day)) # ... and a study visit occurs
+  )
+}
 # The likelihood of the data given the model would be the product of the likelihood of each individual's time to diagnosis given the model.
 # And for each individual, the probability distribution for their timing of diagnosis would be the sum of probabilities for routine and study-visit-based diagnoses.
 # For a given shape and scale of the gamma distribution of TB onset, we can calculate the likelihood of each individual's time to diagnosis given the model.
-likelihood_dx_timing <- function(dx_data = dx_timing_months, shape_onset, rate_onset) {
-  n <- length(dx_data)
-  onset_timing_months <- rgamma(n=n, shape=shape_onset, rate=rate_onset)
-  dx_timing_simulated <- onset_timing_months + 
-    rnorm(n, mean=presymptomatic_mean_months(symptoms_mean_months), sd=presymptomatic_sd_months) + 
-    rnorm(n, mean=symptoms_mean_months, sd=symptoms_sd_months)
-  # compare dx_timing_simulated to dx_timing_months
-  return(sum((dx_timing_simulated - dx_timing_months)^2))
+likelihood_dx_timing <- function(shape_onset, rate_onset, sx_months, dx_timing) {
+  dx_dist <- routine_dx_dist(shape_onset, rate_onset, presymptomatic_mean_months(sx_months))
+  return(sum(log(d(dx_dist)(dx_timing)))
 }
-
-
-
-##### OR ####
-
-# Assume the timing of onset is a gamma distribution with unknown shape and rate, onset_timing_months(shape_onset, rate_onset). 
-# And the timing of diagnosis is equal to onset_timing_months + rnorm(1, mean=presymptomatic_mean_months, sd=presymptomatic_sd_months) + rnorm(1, mean=symptoms_mean_months, sd=symptoms_sd_months)
-# Fit the resulting simulation to the dx_timing_months data using MLE
-dx_timing_sse <- function(dx_data = dx_timing_months, par = list(shape_onset=1, rate_onset=1)) {
-    n <- length(dx_data)
-    onset_timing_months <- rgamma(n=n, shape=par[[1]], rate=par[[2]])
-    dx_timing_simulated <- onset_timing_months + 
-        rnorm(n, mean=presymptomatic_mean_months, sd=presymptomatic_sd_months) + 
-        rnorm(n, mean=symptoms_mean_months, sd=symptoms_sd_months)
-    # compare dx_timing_simulated to dx_timing_months
-    return(sum((dx_timing_simulated - dx_timing_months)^2))
-}
-# find the MLE of shape_onset and rate_onset
-fit <- optim(
-        c(0.5, 50),
-        fn = dx_timing_sse,
-        method = "L-BFGS-B",
-        lower = c(0, 0),
-        upper = c(1000, 1000))
 
