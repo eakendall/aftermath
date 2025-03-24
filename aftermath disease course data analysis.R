@@ -145,7 +145,8 @@ shape <- m*m/v
 ggplot() + 
   geom_density(data = data %>% filter(micropos==1), aes(x = txcompl_endreason_days)) +
   geom_density(data = data.frame(t = rgamma(n=1e5, scale = scale, shape = shape)), aes(x=t), col="red")
-# or we could exclude the diagnoses that were likely made by the study -- but this resulted in even shorter duration. So we'll stick with the raw estimates abvove.
+# or we could exclude the diagnoses that were likely made by the study -- but this resulted in even shorter duration. 
+# So we'll stick with the raw estimates abvove.
 
 # And about that possible small uptick in diagnoses at 12 months: there were only 4 (out of 10 diagnoses in that period) that were possibly diagnosed by the study, 
 # and interestingly they were all in the home arm. At six months, 4 out of 6 were in the home arm. At 18 months arm is irrelevant. 
@@ -173,8 +174,7 @@ data %>% filter(end_reason == "TB recurrence") %>% group_by(floor(txcompl_endrea
   # •	1 – (% of symptomatic care-seeking pulmonary TB that is Xpert-negative and culture-psoitive i.e. ~10%): 
       # These definitely have symptoms before becoming xpert+, 
       # so 1 – (this %) sets an upper bound of 90% with a subclinical period. 
-      # Could lower that upper bound even more with an estimate of true culture-negative 
-      #  pulmonary TB diagnoses (another 5%  upper bound of 85%?). 
+      # Could lower that upper bound even more with an estimate of true culture-negative pulmonary TB diagnoses (another 5%  upper bound of 85%?). 
   #  •	Report paper % of diagnoses that were subclinical (specific to recurrent TB) 
       # as a true lower bound on % subclinical at some point. = 28/66 = 42%
 
@@ -229,12 +229,24 @@ reportdata %>% filter(Foll_Days > 0)  %>% filter(`Clinical/subclinical` %in% c("
 # These are positive cultures, so the proportion detectable by Xpert screening at the end of treatment would be fewer, 
  # say 3-7 of 865 or 0.3-0.8% of the cohort, and 4-9% of recurrences.
 
-
+# And how many should be subclinical in a slice at 6m post-treatment?
+reportdata %>% count(Event) %>% print(n=100)
+reportdata %>% filter(Foll_Days > 0) %>% group_by(`External ID`) %>% count(n())
+reportdata  %>% filter(Event %in% c("Week 48", "Month 12"), `Visit Date`== `Outcome Date`) %>% group_by(`External ID`) %>% 
+  filter(`Clinical/subclinical` %in% c("Clinical","Subclinical")) %>% ungroup() %>% count(`Clinical/subclinical`, Event)
+reportdata  %>% filter(Event %in% c("Week 72", "Month 18"), `Visit Date`== `Outcome Date`) %>% group_by(`External ID`) %>% 
+  filter(`Clinical/subclinical` %in% c("Clinical","Subclinical")) %>% ungroup() %>% count(`Clinical/subclinical`, Event)
+# So in a cohort of 861 followed for recurrence, there were 11 subclinical at the 12mo visit where eveyone got sputum. (Some not Xpert+ though.)
 
 #### Symptoms underreporting ####
 
 # ~3x difference bewteen durations reported in clinical cohorts (https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-019-7026-4)
+(81 + 29.5 + 7.9 )/30 ; (70 + 26 + 7)/30; (92+33+9)/30
 # vs in preavlence surveys (https://bmcmedicine-biomedcentral-com.proxy1.library.jhu.edu/articles/10.1186/s12916-021-02128-9)
+total_duration <- c(36, 22, 22, 18, 19, 21, 22, 16, 13, 13, 9)
+asx_duration <- c(14, 14, 13, 9, 9, 6, 6, 5, 5, 5, 4)
+sx_duration <- total_duration - asx_duration
+summary(sx_duration)
 
 # Could also consier (as more indirect support for at least 2x underreporting) the ~2x difference in peavlence between any cough vs 2 weeks cough in Stuck et al 2024, 
 # and the ~2x difference in duration between symptoms+ and care-seeking in Ku et al. 
