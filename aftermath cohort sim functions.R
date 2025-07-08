@@ -14,8 +14,12 @@ create_cohort <- function(cohort_params)
     #### Symptomatic TB onset ####
     
     # timing
-    scale <- recurrence_time_sd^2/recurrence_time_mean
-    shape <- recurrence_time_mean^2/recurrence_time_sd^2
+    # used python script to estimate gamma parameters
+  
+    # # if I change the mean while keeping the sd proportional, the scale should change in proportion to the mean the shape shouldn't change. So:
+    scale <- 113.88529634851781 * recurrence_time_mean/(192)
+    shape <- 1.6859068628739582 *recurrence_time_shapefactor
+    # And I can vary the shape (mean/sd)^2 as another parameter.
     
     # plot_densities <- data.frame(symptom_onset = rgamma(shape = shape, scale = scale, n = 10000))
     # ggplot(plot_densities, aes(x=symptom_onset/30)) + 
@@ -37,8 +41,10 @@ create_cohort <- function(cohort_params)
     #### Timing of routine diagnosis ####
     # Use negative binomial to increase variance (trial data mean duration 17 days, sd 14 days)
     # And scale by (t/120)^1/4 for mean and var 
-    # An alternative parametrization (often used in ecology) is by the mean mu (see above), and size, the dispersion parameter, where prob = size/(size+mu). The variance is mu + mu^2/size in this parametrization.
+    # An alternative parametrization (often used in ecology) is by the mean mu (see above), 
+    # and size, the dispersion parameter, where prob = size/(size+mu). The variance is mu + mu^2/size in this parametrization.
     # Var = mu + mu^2/size --> size = (mu^2)/(sd^2 - mu), varies by same factor as mean and var.
+    
     
     cohort <- cohort %>% mutate(diagnosis_routine = case_when(
       TB == 1 ~ symptom_onset + rnbinom(n = n(), 
@@ -46,7 +52,11 @@ create_cohort <- function(cohort_params)
                                           (symptom_onset/120)^(symptom_duration_timescale),
                                         mu = symptom_duration_mean_reported/symptom_underestimation_factor/home_visit_passive_detection_impact * 
                                           (symptom_onset/120)^(symptom_duration_timescale)),
-      TRUE ~ NA_real_))
+            TRUE ~ NA_real_)) %>%
+      mutate(diagnosis_routine_original = diagnosis_routine,
+             TB_original = TB,
+             symptom_onset_original = symptom_onset,
+             sputum_onset_original = sputum_onset)
     
     
     # plot_densities <- plot_densities %>% 
@@ -84,8 +94,8 @@ create_cohort <- function(cohort_params)
     
     #### Prediction ####
     
-    # simulate an ROC curve with desired AUC (will be able to get data from Samyra instead, for prediction model with desired covariates)
-    # https://stats.stackexchange.com/questions/422926/generate-synthetic-data-given-auc, from Zelen and Severo Handbook of Mathematical Functions 1964
+    # simulate an ROC curve with desired AUC,using approach from
+    # https://stats.stackexchange.com/questions/422926/generate-synthetic-data-given-auc
     t <- sqrt(log(1/(1-auc)^2))
     z <- t-((2.515517 + 0.802853*t + 0.0103328*t^2) / 
               (1 + 1.432788*t + 0.189269*t^2 + 0.001308*t^3))
@@ -99,7 +109,7 @@ create_cohort <- function(cohort_params)
     
     
     # assign risk rankings based on sensitivity and specificity of roc.curve for TB:
-    # First, assign scores to the TB cases such that a given prediction score P captures P% of the TB cases
+    # First, assign scores to the TB cases such that a given prediction score cutoff of P proportion 1-P of the TB cases
     # And then, for the non-cases, assign with probability (1-spec) at a 
     cohort$TB_risk_rank[cohort$TB == 1] <- (1:sum(cohort$TB == 1))/sum(cohort$TB == 1)
     cohort$nonTB_risk_rank[cohort$TB == 0] <- (1:sum(cohort$TB == 0))/sum(cohort$TB == 0)
@@ -118,6 +128,23 @@ create_cohort <- function(cohort_params)
   })
 }
 
+# validate the proportion of subclinical cases at baseline and at 6 months, and reject if inconsistent with Report data:
+# sputum-positive TB from baseline (from the start of post-treatment follow-up) in up to 9/(9+67) = 12% [6-20%] of recurrences 
+# cross-sectional prevalence of asymptomatic TB at 6 months of between 0.5% and 1.6%. 
+
+check_subclinical <- function(cohort, cohort_params)
+{
+  # check the proportion of subclinical cases at baseline:
+  subclinical_baseline_amongTB <- cohort %>% filter(TB == 1) %>% summarize(sum(sputum_onset==0, na.rm=T))/
+    cohort %>% filter(TB == 1) %>% summarize(n())
+  subclinical_6mo_amongcohort <- cohort %>% summarize(sum(sputum_onset<180 & symptom_onset > 180, na.rm=T))/
+    cohort %>% summarize(n())
+  if (subclinical_baseline_amongTB < cohort_params$subclinical_baseline_amongTB_max & 
+      subclinical_6mo_amongcohort > cohort_params$subclinical_6m_amongcohort_min & 
+      subclinical_6mo_amongcohort < cohort_params$subclinical_6m_amongcohort_max)
+    return(TRUE) else
+      return(FALSE)
+}
 
 ### Apply screening interventions ###
 # Model each round with:
@@ -129,6 +156,7 @@ create_cohort <- function(cohort_params)
 ## ability to get sputum for micro, and
 ## estimated coverage as % of target population.
 
+# This function just says who's contacted by screening, and makes baseline adjustments to later TB based on counseling and prevention.
 get_screening_coverage <- function(cohort, screening_design, cohort_params) {
   
   # Track screening contacts made
@@ -138,34 +166,64 @@ get_screening_coverage <- function(cohort, screening_design, cohort_params) {
       screening_design$screening_location, 
       screening_design$target_coverage)
   
-  # Once screened at home for the first time, adjust future routine diagnosis timing by home_visit_passive_detection_impact
-  ## identify first home contact
-  if (sum(screening_design$screening_location == "home") > 0) {
-    if (sum(screening_design$screening_location == "home") == 1) {
-      first_home_contact <- ifelse(covered_screening[,screening_design$screening_location == "home"] == 1, 
-                                   screening_design$timing_months[screening_design$screening_location == "home"] * 30, 
-                                   NA)
-    } else {
-      first_home_contact <- 
-        (screening_design$timing_months[screening_design$screening_location == "home"] * 30)[
-          apply(covered_screening[,screening_design$screening_location == "home"], 1, function(x) which(x == 1)[1])
-        ]
-      
-    }
-  } else first_home_contact <- rep(NA, nrow(cohort))
-  ## and adjust later care-seeking accordingly 
-  cohort <- cohort %>% mutate(
-    diagnosis_routine = case_when(
-      is.na(first_home_contact) ~ diagnosis_routine,
-      symptom_onset > first_home_contact ~ diagnosis_routine - (diagnosis_routine - symptom_onset)*(1-cohort_params$home_visit_passive_detection_impact),
-      TRUE ~ diagnosis_routine),
-    sputum_onset = case_when(
-      sputum_onset > diagnosis_routine ~ diagnosis_routine,
-      TRUE ~ sputum_onset))
+  # Throughout, if get counseling about recurrence up front, adjust timing by intentional_counseling_passive_detection_impact
+  # for all with symptom onset before intentional_counseling_passive_detection_duration. 
+  
+  if (screening_design$counseling_coverage[1] > 0)
+  {
+    cohort <- cohort %>% mutate(
+      diagnosis_routine = case_when(
+        (TB == 1) & (risk_quantile > (1 - screening_design$counseling_coverage[1])) & (diagnosis_routine > symptom_onset) & 
+          (symptom_onset < cohort_params$intentional_counseling_passive_detection_duration) ~ 
+          diagnosis_routine - (diagnosis_routine - symptom_onset)*(1-cohort_params$intentional_counseling_passive_detection_impact),
+        TRUE ~ diagnosis_routine))
+  }
+  
+  # And apply prevention here too, as changing whether TB will develop. 
+  if (screening_design$prevention_coverage[1] > 0)
+  {
+    cohort <- cohort %>% mutate(
+      TB = case_when(
+        (TB == 1) & (risk_quantile > (1 - screening_design$prevention_coverage[1])) ~ 
+          rbinom(n = n(), size = 1, prob = cohort_params$prevention_efficacy),
+        TRUE ~ TB),
+      symptom_onset = case_when(TB == 0 & !is.na(symptom_onset) ~ NA, TRUE ~ symptom_onset),
+      sputum_onset = case_when(TB == 0 & !is.na(sputum_onset) ~ NA, TRUE ~ sputum_onset),
+      diagnosis_routine = case_when(TB == 0 & !is.na(diagnosis_routine) ~ NA, TRUE ~ diagnosis_routine),
+      pulmonary_with_micro = case_when(TB == 0 & pulmonary_with_micro == 1 ~ 0, TRUE ~ pulmonary_with_micro),
+      ever_subclinical_sputumpos = case_when(TB == 0 & ever_subclinical_sputumpos == 1 ~ 0, TRUE ~ ever_subclinical_sputumpos))
+  }
+  
+  # # And Once screened at home for the first time, adjust future routine diagnosis timing by home_visit_passive_detection_impact
+  # ## identify first home contact
+  # if (sum(screening_design$screening_location == "home") > 0) {
+  #   if (sum(screening_design$screening_location == "home") == 1) {
+  #     first_home_contact <- ifelse(covered_screening[,screening_design$screening_location == "home"] == 1, 
+  #                                  screening_design$timing_months[screening_design$screening_location == "home"] * 30, 
+  #                                  NA)
+  #   } else {
+  #     first_home_contact <- 
+  #       (screening_design$timing_months[screening_design$screening_location == "home"] * 30)[
+  #         apply(covered_screening[,screening_design$screening_location == "home"], 1, function(x) which(x == 1)[1])
+  #       ]
+  #     
+  #   }
+  # } else first_home_contact <- rep(NA, nrow(cohort))
+  # ## and adjust later care-seeking accordingly 
+  # cohort <- cohort %>% mutate(
+  #   diagnosis_routine = case_when(
+  #     is.na(first_home_contact) ~ diagnosis_routine,
+  #     symptom_onset > first_home_contact ~ diagnosis_routine - (diagnosis_routine - symptom_onset)*(1-cohort_params$home_visit_passive_detection_impact),
+  #     TRUE ~ diagnosis_routine),
+  #   sputum_onset = case_when(
+  #     sputum_onset > diagnosis_routine ~ NA,
+  #     TRUE ~ sputum_onset))
   
   return(list("covered" = covered_screening, 
               "cohort" = cohort))
 }
+  
+
 
 # Identify the dates when any cases are detected by screening
 
@@ -207,32 +265,77 @@ apply_screening_round <- function(
 
  
 
-plot_screening <- function(cohort)
-{
-  colors <- c("Symptomatic" = "blue", "Sputum+" = "red")
-  fillcolors <- c("Micro+ Pulmonary" = "red", "Clinical or extrapulmonary" = "gray")
-  linetypes <- c("symptoms" = "dotted", "micro" = "dashed", "both" = "dotdash")
-  ggplot(cohort %>% filter(TB==1) %>% arrange(diagnosis_routine) %>% 
-           mutate(newID = row_number(),
-                  TBtype = case_when(pulmonary_with_micro == 1 ~ "Micro+ Pulmonary",
-                                     TRUE ~ "Clinical or extrapulmonary"),
-                  detected = !is.na(detection_timing))) + 
-    geom_vline(data = screening_design, aes(xintercept = timing_months*30, linetype = screening_method)) + 
-    geom_segment(aes(x = sputum_onset, xend =  diagnosis_routine, y = newID - 0.2, col='Sputum+'), size=0.8) + 
-    geom_segment(aes(x = symptom_onset, xend = diagnosis_routine, y = newID + 0.2, col='Symptomatic'), size=0.8) + 
-    scale_color_manual("Time with TB", values = colors) + 
-    scale_fill_manual("Routine TB diagnosis", values = fillcolors) + 
-    scale_linetype_manual("Screening Method", values = linetypes) + 
-    geom_point(aes(x = diagnosis_routine, y = newID, fill = TBtype), pch=21) + 
-    ylab("Cases arranged by timing of routine diagnosis") + 
-    xlab("Days since prior treatment completion") +
-    xlim(0,30*24) + 
-    geom_point(aes(x = detection_timing, y = newID), pch=8, col = "green", size=3) + 
-    ggthemes::theme_fivethirtyeight()
+# function we'll use to apply the same steps to all 
+apply_intervention <- function(cohort, design, intervention_parameters, cohort_params) {
+  # apply screening rounds
+  screened <- get_screening_coverage(cohort, design, cohort_params)
+  covered_screening <- screened$covered
+  cohort_screened <- screened$cohort
+  
+  for (r in 1:nrow(design)) {
+    cohort_screened <- apply_screening_round(cohort_screened, 
+                                             covered_screening[,r],
+                                             timing_months = design$timing_months[r], 
+                                             screening_method = design$screening_method[r], 
+                                             screening_location = design$screening_location[r],
+                                             intervention_parameters)
+  }
+  
+  return(cohort_screened)
 }
 
 
+plot_screening <- function(cohort, screening_design, colorfill = TRUE)
+{
+  colors <- c("Symptomatic" = "blue", "NAAT+" = "red")
+  fillcolors <- c("Micro+ Pulmonary" = "red", "Clinical or extrapulmonary" = "gray")
+  linetypes <- c("symptoms" = "dotted", "micro" = "dashed", "both" = "dotdash")
+  plotdata <- cohort %>% filter(TB==1) %>% arrange(diagnosis_routine) %>% 
+    mutate(newID = row_number(),
+           TBtype = case_when(pulmonary_with_micro == 1 ~ "Micro+ Pulmonary",
+                              TRUE ~ "Clinical or extrapulmonary"),
+           detected = !is.na(detection_timing))
+  plot <- ggplot(plotdata) + 
+    geom_vline(data = screening_design, aes(xintercept = timing_months, linetype = screening_method)) + 
+    scale_color_manual("Time with TB", values = colors) + 
+    scale_linetype_manual("Screening Method", values = linetypes) + 
+    ylab("Cases arranged by timing of routine diagnosis") + 
+    xlab("Months since prior treatment completion") +
+    # if detection_timing is NA, plot full segment
+    geom_segment(data = plotdata %>% filter(is.na(detection_timing)), 
+                 aes(x = sputum_onset/30, xend =  diagnosis_routine/30, y = newID + 0.15, col='NAAT+'), size=0.8) + 
+    geom_segment(data = plotdata %>% filter(!is.na(detection_timing)), 
+                 aes(x = sputum_onset/30, xend =  detection_timing/30, y = newID + 0.15, col='NAAT+'), size=0.8) + 
+    geom_segment(data = plotdata %>% filter(!is.na(detection_timing) & sputum_onset < detection_timing), 
+                 aes(x = detection_timing/30, xend = diagnosis_routine/30, y = newID + 0.15, col='NAAT+'), size=0.8, lty="11") + 
+    geom_segment(data = plotdata %>% filter(is.na(detection_timing)), 
+                 aes(x = symptom_onset/30, xend =  diagnosis_routine/30, y = newID - 0.15, col='Symptomatic'), size=0.8) + 
+    geom_segment(data = plotdata %>% filter(!is.na(detection_timing)), 
+                 aes(x = symptom_onset/30, xend =  detection_timing/30, y = newID - 0.15, col='Symptomatic'), size=0.8) + 
+    geom_segment(data = plotdata %>% filter(!is.na(detection_timing) & symptom_onset < detection_timing), 
+                 aes(x = detection_timing/30, xend = diagnosis_routine/30, y = newID - 0.15, col='Symptomatic'), size=0.8, lty="11") + 
+    geom_point(aes(x = diagnosis_routine/30, y = newID), fill = 'black', pch=21) + 
+    geom_point(aes(x = detection_timing/30, y = newID), pch=10, col = "green2", size=2) +
+    scale_x_continuous(breaks = seq(0, 30, 6), limits = c(0,30)) +
+    theme_minimal() +
+    # reverse order of color legend
+    guides(colour = guide_legend(reverse=T),
+           # remove lty legend
+           linetype = "none") +
+    # overlay legend on bottom right corner of plot
+    theme(legend.position = c(0.8, 0.2), 
+          legend.background = element_rect(fill = "transparent"),
+          legend.box.background = element_rect(fill = "white"))
+  
+  if(colorfill) plot <- plot + 
+    scale_fill_manual("Routine TB diagnosis", values = fillcolors) + 
+    geom_point(aes(x = diagnosis_routine/30, y = newID, fill = TBtype), pch=21)  
+    
+  return(plot)
+  
+}
 
+  
 #### Outcomes of interest #### 
 
 # Cases detected (is this valuable in itself? this simulation assumes all with be detected eventually, or deaths aren't observed)
@@ -246,16 +349,16 @@ time_with_tb <- function(cohort)
 {
   # add time 
   outcomes <- cohort %>% mutate(
-    symptom_days_soc = diagnosis_routine - symptom_onset,
-    sputum_days_soc = diagnosis_routine - sputum_onset,
+    symptom_days_soc = diagnosis_routine_original - symptom_onset_original,
+    sputum_days_soc = diagnosis_routine_original - sputum_onset_original,
     symptom_days_screening = case_when(detection_timing > symptom_onset & 
                                          detection_timing < diagnosis_routine ~ 
                                          diagnosis_routine - detection_timing,
-                                       TRUE ~ sputum_days_soc),
+                                       TRUE ~ diagnosis_routine - symptom_onset),
     sputum_days_screening = case_when(detection_timing > sputum_onset &
                                         detection_timing < diagnosis_routine ~
                                         diagnosis_routine - detection_timing,
-                                      TRUE ~ sputum_days_soc))
+                                      TRUE ~ diagnosis_routine - sputum_onset))
   results <- outcomes %>% summarise(
     symptom_days_soc = sum(symptom_days_soc, na.rm = TRUE),
     symptom_days_screening = sum(symptom_days_screening, na.rm = TRUE),
@@ -274,10 +377,13 @@ time_with_tb <- function(cohort)
 ### Symptomatic
 ### Sputum+
 
-costs <- function(screening_design, cohort, covered_screening)
+costs <- function(screening_design, cohort, covered_screening,
+                  initial_contact_cost_home = 15, 
+                  initial_contact_cost_phone = 5, #** from hojoon's team, need to talk with them about uncertainty
+                  sputum_test_cost = 16 # https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0214675 
+)
 {
-  initial_contact_cost = list(home = 10, phone = 3) #** Hojoon to send
-  sputum_test_cost = 16 # https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0214675 
+  initial_contact_cost = list(home = initial_contact_cost_home, phone = initial_contact_cost_phone)
   # treatment_cost = 1000
   
   symptom_prevalence_nonTB = 0.05 #** Will get from Aye's analysis of symptoms after retraining. 

@@ -36,7 +36,7 @@ for (r in 1:nrow(screening_design)) {
 cohort %>% filter(TB==1) %>% mutate(detected = !is.na(detection_timing)) %>% 
   summarise(mean(detected))
 
-plot_screening(cohort)
+plot_screening(cohort, )
 
 time_with_tb(cohort)    
 
@@ -60,3 +60,4 @@ sum(costs(screening_design, cohort, covered_screening))/
 
 # Mortality? (Do we have the data to estimate this? What would we need to assume?)
 
+plot_screening(cohort, screening_design)
