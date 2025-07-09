@@ -52,11 +52,7 @@ create_cohort <- function(cohort_params)
                                           (symptom_onset/120)^(symptom_duration_timescale),
                                         mu = symptom_duration_mean_reported/symptom_underestimation_factor/home_visit_passive_detection_impact * 
                                           (symptom_onset/120)^(symptom_duration_timescale)),
-            TRUE ~ NA_real_)) %>%
-      mutate(diagnosis_routine_original = diagnosis_routine,
-             TB_original = TB,
-             symptom_onset_original = symptom_onset,
-             sputum_onset_original = sputum_onset)
+            TRUE ~ NA_real_))
     
     
     # plot_densities <- plot_densities %>% 
@@ -92,6 +88,11 @@ create_cohort <- function(cohort_params)
                                TRUE ~ NA_real_))
     
     
+    cohort <-  cohort %>%
+      mutate(diagnosis_routine_original = diagnosis_routine,
+             TB_original = TB,
+             symptom_onset_original = symptom_onset,
+             sputum_onset_original = sputum_onset)
     #### Prediction ####
     
     # simulate an ROC curve with desired AUC,using approach from

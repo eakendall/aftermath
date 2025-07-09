@@ -2,8 +2,8 @@ library(binom)
 library(clipr)
 
 source("aftermath cohort sim functions.R")
-N_cohort = 1000
-N_samples <- 20
+N_cohort = 10000
+N_samples <- 500
 
 #### Incorporate uncertainty: Sample cohort_params from posterior distributions ####
 cohort_param_ranges <- list(
@@ -183,6 +183,7 @@ screening_design_counseling <-
 
 for (n in 1:N_samples)
 {
+  print(n)
   #### More parameter-specific setup ####
   cohort <- create_cohort(cohort_params[n,])
   # if doesn't validate on subclinical TB, abort and fill NAs
@@ -316,14 +317,12 @@ lapply(results, function(x)
   select(intervention, mean_symptom_days, everything()) %>%
   write_clip() 
 
-  
+saveRDS(results, "results_aftermath__20250709.RDS")
 
 
 
 
-
-
-
+# old code::
 # summarize results for aftermath intervention
 lapply(results, function(x) summary(x$cost_per_symptomatic_month_averted))
 summary(results_aftermath$cost_per_infectious_months_averted)
