@@ -138,7 +138,7 @@ check_subclinical <- function(cohort, cohort_params)
   # check the proportion of subclinical cases at baseline:
   subclinical_baseline_amongTB <- cohort %>% filter(TB == 1) %>% summarize(sum(sputum_onset==0, na.rm=T))/
     cohort %>% filter(TB == 1) %>% summarize(n())
-  subclinical_6mo_amongcohort <- cohort %>% summarize(sum(sputum_onset<180 & symptom_onset > 180, na.rm=T))/
+  subclinical_6mo_amongcohort <- cohort %>% summarize(sum(sputum_onset<180 & symptom_onset >= 180, na.rm=T))/
     cohort %>% summarize(n())
   if (subclinical_baseline_amongTB < cohort_params$subclinical_baseline_amongTB_max & 
       subclinical_6mo_amongcohort > cohort_params$subclinical_6m_amongcohort_min & 
@@ -248,11 +248,11 @@ apply_screening_round <- function(
       screened_current_round==0 ~ 0, 
       timing_months*30 >= diagnosis_routine ~ 0,
       screening_method %in% c("symptoms", "both") &
-        timing_months*30 > symptom_onset ~ 
+        timing_months*30 >= symptom_onset ~ 
         rbinom(n = n(), size = 1, prob = intervention_parameters$sensitivity_symptoms[[screening_location]]),
       # micro screening
       screening_method %in% c("micro", "both") & 
-        timing_months*30 > sputum_onset ~ 
+        timing_months*30 >= sputum_onset ~ 
         rbinom(n = n(), size = 1, prob = intervention_parameters$success_sputum[[screening_location]]),
       TRUE ~ 0),
     
@@ -352,13 +352,13 @@ time_with_tb <- function(cohort)
   outcomes <- cohort %>% mutate(
     symptom_days_soc = diagnosis_routine_original - symptom_onset_original,
     sputum_days_soc = diagnosis_routine_original - sputum_onset_original,
-    symptom_days_screening = case_when(detection_timing > symptom_onset & 
-                                         detection_timing < diagnosis_routine ~ 
-                                         diagnosis_routine - detection_timing,
+    symptom_days_screening = case_when(detection_timing >= symptom_onset & 
+                                         detection_timing <= diagnosis_routine ~ 
+                                         detection_timing - symptom_onset,
                                        TRUE ~ diagnosis_routine - symptom_onset),
-    sputum_days_screening = case_when(detection_timing > sputum_onset &
-                                        detection_timing < diagnosis_routine ~
-                                        diagnosis_routine - detection_timing,
+    sputum_days_screening = case_when(detection_timing >= sputum_onset &
+                                        detection_timing <= diagnosis_routine ~
+                                        detection_timing - sputum_onset,
                                       TRUE ~ diagnosis_routine - sputum_onset))
   results <- outcomes %>% summarise(
     symptom_days_soc = sum(symptom_days_soc, na.rm = TRUE),
@@ -405,14 +405,14 @@ costs <- function(screening_design, cohort, covered_screening,
                     sapply(screening_design$timing_months*30, function(s) s <= cohort$diagnosis_routine), na.rm=T)
   
   # people with sputum+ asymptomatic TB, who are targeted and reached:
-  asxtb <- colSums(cohort$TB * sapply(screening_design$timing_months*30, function(s) cohort$symptom_onset > s & cohort$sputum_onset < s) * 
+  asxtb <- colSums(cohort$TB * sapply(screening_design$timing_months*30, function(s) cohort$symptom_onset >= s & cohort$sputum_onset < s) * 
                      covered_screening *
                      sapply(screening_design$timing_months*30, function(s) s <= cohort$diagnosis_routine), na.rm=T)
   
   # people with non-TB but with symptoms (never TB, or after diagnosis, or not yet sputum+ or symptom+:
   nontbsx <- colSums((cohort$TB ==0 |
-                        sapply(screening_design$timing_months*30, function(s) cohort$symptom_onset > s & (cohort$sputum_onset > s | is.na(cohort$sputum_onset))) |
-                        sapply(screening_design$timing_months*30, function(s) s > cohort$diagnosis_routine)) & 
+                        sapply(screening_design$timing_months*30, function(s) cohort$symptom_onset >= s & (cohort$sputum_onset >= s | is.na(cohort$sputum_onset))) |
+                        sapply(screening_design$timing_months*30, function(s) s >= cohort$diagnosis_routine)) & 
                        covered_screening) *
     symptom_prevalence_nonTB
   
