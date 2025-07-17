@@ -88,7 +88,12 @@ if (run_cohort_features)
             prev_sx_12mo = numeric(N_samples),
             prev_inf_12mo = numeric(N_samples),
             cum_months_sx = numeric(N_samples),
-            cum_months_inf = numeric(N_samples))
+            cum_months_inf = numeric(N_samples),
+            duration_diagnosed_before_6 = numeric(N_samples),
+            duration_diagnosed_before_9 = numeric(N_samples),
+            duration_diagnosed_after_6 = numeric(N_samples),
+            duration_diagnosed_after_9 = numeric(N_samples))
+      
   
     # For visual, for guidelines intervention, quantify for a cascade:
     cascade_features <- 
@@ -101,8 +106,12 @@ if (run_cohort_features)
         symptomatic_at_visit = numeric(N_samples),
         detected_and_linked = numeric(N_samples),
         total_time_of_linked = numeric(N_samples),
-        remaining_time_of_linked = numeric(N_samples)
-      )
+        remaining_time_of_linked = numeric(N_samples),
+        
+        duration_soc_detected_61218 = numeric(N_samples),
+        contribution_soc_detected_61218 = numeric(N_samples),
+        duration_notdetected_61218 = numeric(N_samples))
+      
   
 
   for (n in 1:N_samples)
@@ -186,6 +195,21 @@ if (run_cohort_features)
       sum(cohort$diagnosis_routine - cohort$sputum_onset, na.rm=T)/30
       
     
+    cohort_features[n, "duration_diagnosed_before_6"] <- 
+      mean(cohort$diagnosis_routine[cohort$TB==1 & cohort$diagnosis_routine <= 6*30] - 
+            cohort$symptom_onset[cohort$TB==1 & cohort$diagnosis_routine <= 6*30], na.rm=T)/30
+    cohort_features[n, "duration_diagnosed_before_9"] <-
+      mean(cohort$diagnosis_routine[cohort$TB==1 & cohort$diagnosis_routine <= 9*30] - 
+            cohort$symptom_onset[cohort$TB==1 & cohort$diagnosis_routine <= 9*30], na.rm=T)/30
+    cohort_features[n, "duration_diagnosed_after_6"] <-
+      mean(cohort$diagnosis_routine[cohort$TB==1 & cohort$diagnosis_routine > 6*30] - 
+            cohort$symptom_onset[cohort$TB==1 & cohort$diagnosis_routine > 6*30], na.rm=T)/30
+    cohort_features[n, "duration_diagnosed_after_9"] <-
+      mean(cohort$diagnosis_routine[cohort$TB==1 & cohort$diagnosis_routine > 9*30] - 
+            cohort$symptom_onset[cohort$TB==1 & cohort$diagnosis_routine > 9*30], na.rm=T)/30
+    
+
+    
     cascade_features[n, "cumulative_incidence"] <- 
       sum(cohort$TB==1)
     cascade_features[n, "TB_beyond_6mo"] <-
@@ -200,7 +224,6 @@ if (run_cohort_features)
       sum(cohort$TB==1 & ((cohort$symptom_onset < 6*30 & cohort$diagnosis_routine > 6*30)  | 
                           (cohort$symptom_onset < 12*30 & cohort$diagnosis_routine > 12*30) |
                           (cohort$symptom_onset < 18*30 & cohort$diagnosis_routine > 18*30)), na.rm=T)
-    
     
     screening_design_guidelines <- 
       data.frame(
@@ -231,6 +254,23 @@ if (run_cohort_features)
     cascade_features[n, "remaining_time_of_linked"] <-
       sum((outputs$detection_timing - outputs$symptom_onset)[outputs$TB==1 & !is.na(outputs$detection_timing)])
     
+    
+    
+    
+    cascade_features[n, "duration_soc_detected_61218"] <-
+      mean(outputs$diagnosis_routine[outputs$TB==1 & !is.na(outputs$detection_timing)] - 
+            outputs$symptom_onset[outputs$TB==1 & !is.na(outputs$detection_timing)], na.rm=T)/30
+    cascade_features[n, "contribution_soc_detected_61218"] <-
+      sum(outputs$diagnosis_routine[outputs$TB==1 & !is.na(outputs$detection_timing)] - 
+             outputs$symptom_onset[outputs$TB==1 & !is.na(outputs$detection_timing)], na.rm=T)/
+      sum(outputs$diagnosis_routine[outputs$TB==1] - 
+            outputs$symptom_onset[outputs$TB==1], na.rm=T)
+    
+    cascade_features[n, "duration_notdetected_61218"] <-
+      mean(outputs$diagnosis_routine[outputs$TB==1 & is.na(outputs$detection_timing)] - 
+            outputs$symptom_onset[outputs$TB==1 & is.na(outputs$detection_timing)], na.rm=T)/30
+
+    
   }        
 }
   
@@ -248,7 +288,7 @@ cohort_features[cohort_features$accepted_subclinical==1,] %>% summarise_all(func
 cohort_features[cohort_features$accepted_subclinical==1,] %>% summarise_all(function(x) quantile(x, 0.25, na.rm=T))
 cohort_features[cohort_features$accepted_subclinical==1,] %>% summarise_all(function(x) quantile(x, 0.75, na.rm=T)) # for the abstract
 
-  
+
   # For visual, for guidelines intervention, quantify for a cascade:
   #   * cumulative incidence, 
   #   * proportion with onset after 6 months, 
@@ -279,19 +319,19 @@ cohort_features[cohort_features$accepted_subclinical==1,] %>% summarise_all(func
          
          before_6mo_start = 0,
          before_6mo_end = cumulative_incidence - TB_beyond_6mo,
-         before_6mo_label = "Occurs too early (<6mo)",
+         before_6mo_label = "Too early (<6mo)",
          before_6mo_proportion = (cumulative_incidence - TB_beyond_6mo)/cumulative_incidence, 
          before_6mo_group = "Timing of recurrence",
          
          between618mo_start = cumulative_incidence - TB_beyond_6mo,
          between618mo_end = cumulative_incidence - (TB_beyond_6mo - TB_beyond6_before18),
-         between618mo_label = "Active between 6-18 months",
+         between618mo_label = "Between 6-18 months",
          between618mo_proportion = (TB_beyond6_before18)/cumulative_incidence,
          between618mo_group = "Timing of recurrence",
 
          after18mo_start = cumulative_incidence - (TB_beyond_6mo - TB_beyond6_before18),
          after18mo_end = cumulative_incidence,
-         after18mo_label = "Occurs too late (>18mo)",
+         after18mo_label = "Too late (>18mo)",
          after18mo_proportion = (TB_beyond_6mo - TB_beyond6_before18)/cumulative_incidence,
          after18mo_group = "Timing of recurrence",
 
@@ -381,7 +421,7 @@ cohort_features[cohort_features$accepted_subclinical==1,] %>% summarise_all(func
   # in plotdata, assign "path" by looking up outcome in pathmapping
   plotdata$path <- as.logical(pathmapping[plotdata$outcome, 2])
   
-  axistext <- data.frame(text = c("Occurrence", "Timing", "Status",  "Detection", "Time with TB"),
+  axistext <- data.frame(text = c("Occurrence", "Timing", "Status at visit",  "Detection", "Time with TB"),
                       position = c(2, 5, 9, 12.5, 15.5))
     
   
@@ -401,7 +441,7 @@ cohort_features[cohort_features$accepted_subclinical==1,] %>% summarise_all(func
       # summarize means for each outcome
       plotdata %>% group_by(outcomex, group) %>% 
         summarise(start = mean(start), end = mean(end), label = first(label), 
-                  proportion = mean(proportion), cumulative_incidence = first(cumulative_incidence),
+                  proportion = median(proportion), cumulative_incidence = first(cumulative_incidence),
                   TB_beyond6_before18 = mean(TB_beyond6_before18),
                   TB_at_visit = mean(TB_at_visit),
                   symptomatic_at_visit = mean(symptomatic_at_visit),
@@ -434,13 +474,25 @@ cohort_features[cohort_features$accepted_subclinical==1,] %>% summarise_all(func
     annotate("text", x = axistext$position, y = -0.003, label = axistext$text, fontface=2)
     
     
-    
+  # Redsults for text about guidelines screening cascade
+  plotdata %>% filter(outcome=="before_6mo") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
+  plotdata %>% filter(outcome=="after18mo") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
+  plotdata %>% filter(outcome=="sxatvisit") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
+  plotdata %>% filter(outcome=="detectedlinked") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
+  plotdata %>% filter(outcome=="averted") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
+  
+  cascade_features %>% filter(accepted_subclinical==1) %>% 
+    summarise(
+      quantile(duration_soc_detected_61218, c(0.5,0.025, 0.975), na.rm=T),
+      quantile(contribution_soc_detected_61218, c(0.5,0.025, 0.975), na.rm=T),
+      quantile(duration_notdetected_61218, c(0.5,0.025, 0.975), na.rm=T)
+    )
 
 
 
 #### More intervnetion setup ####
 
-intervention_names = c("guidelines", "earlier", "frequent", "sputum", "sputummoretargeted", "counseling", "prevention")
+intervention_names = c("guidelines", "earlier", "frequent", "sputum", "sputummoretargeted", "sputumearly", "counseling", "prevention")
 
 results <- list()
 for (name in intervention_names) {
@@ -472,7 +524,7 @@ screening_design_earlier <-
   data.frame(
     "counseling_coverage" = 0, 
     "prevention_coverage" = 0,
-    "timing_months" = c(3, 6, 12),
+    "timing_months" = c(3, 6, 9),
     "target_coverage" = c(1, 1, 1),
     "screening_method" = c("symptoms", "symptoms", "symptoms"),
     "screening_location" = c("home", "phone", "phone")
@@ -567,6 +619,21 @@ for (n in 1:N_samples)
       "screening_location" = c("home", "phone", "phone")
     ) %>% 
     arrange(timing_months)
+  
+  # earlier schedule for a fraction, plus sputum at first visit (and the others get nothing)
+  targeting_sputumearly =  (cohort_params$initial_contact_cost_home[n] * (1 + 2*cohort_params$initial_contact_cost_phone_factor[n]) ) / 
+    (cohort_params$initial_contact_cost_home[n] * (1 + 2*cohort_params$initial_contact_cost_phone_factor[n]) +
+       cohort_params$sputum_test_cost[n])
+  screening_design_sputumearly <- 
+    data.frame(
+      "counseling_coverage" = 0,
+      "prevention_coverage" = 0,
+      "timing_months" = c(3,6,9),
+      "target_coverage" = c(1,1,1) * targeting_sputumearly,
+      "screening_method" = c("both", "symptoms", "symptoms"),
+      "screening_location" = c("home", "phone", "phone")
+    ) %>% 
+    arrange(timing_months)
 
 
   # prevention of recurrence
@@ -589,7 +656,7 @@ for (n in 1:N_samples)
   outputs <- list()
   for (intervention in intervention_names)
   {
-    coverage[[intervention]] <- ifelse(intervention %in% c("frequent", "sputum", "sputummoretargeted", "prevention"), get(paste0("targeting_", intervention)), NA) 
+    coverage[[intervention]] <- ifelse(intervention %in% c("frequent", "sputum", "sputummoretargeted", "sputumearly", "prevention"), get(paste0("targeting_", intervention)), NA) 
     outputs[[intervention]] <- apply_intervention(cohort, get(paste0("screening_design_", intervention)), 
                                                   intervention_parameters, cohort_params[n,])  
   }
@@ -643,7 +710,7 @@ cbind(
            inf_reduction = infectious_months_averted/infectious_months_soc*100,
            coverage_percent = coverage * 100,
            proportion_detected_percent = detections/recurrences*100) %>%
-    select(recurrences, detections,  mean_symptom_days) %>%
+    select(recurrences, detections, mean_symptom_days) %>%
     summarise_all(  
       function(y) paste0(round(median(y, na.rm = T),0), " (", 
                          round(quantile(y, 0.025, na.rm = T),0), ", ", 
@@ -651,34 +718,29 @@ cbind(
     select(-intervention)
   ) %>%
   # make intervention the first column, and mean_symptom_days the second column
-  select(intervention, coverage_percent, recurrences, detections, proportion_detected_percent, sx_reduction, inf_reduction) %>%
+  select(intervention, coverage_percent, recurrences, detections, proportion_detected_percent, 
+         # mean_symptom_days, 
+         sx_reduction, inf_reduction) %>%
   filter(intervention != "sputum") %>% 
   write_clip() 
 
 
 
 
+# pairwise comparisons, detections and averted time
+
+lapply(results, function(x) 
+  ((x %>% select(detections, symptomatic_months_averted, infectious_months_averted))/ (results$guidelines %>% select(detections, symptomatic_months_averted, infectious_months_averted))) %>%
+    summarise_all(function(y) c(round(median(y, na.rm = T),2), round(quantile(y, 0.025, na.rm = T),2), round(quantile(y, 0.975, na.rm = T),2))))
+
+# and as absolute differnce:
+lapply(results, function(x) 
+  ((x %>% mutate(proportion = detections/recurrences) %>%
+      select(proportion, symptomatic_months_averted, infectious_months_averted)) - (results$guidelines %>% mutate(proportion = detections/recurrences) %>% select(proportion, symptomatic_months_averted, infectious_months_averted))) %>%
+    summarise_all(function(y) c(round(median(y, na.rm = T),2), round(quantile(y, 0.025, na.rm = T),2), round(quantile(y, 0.975, na.rm = T),2))))
+
 
 # old code::
-# summarize results for aftermath intervention
-lapply(results, function(x) summary(x$cost_per_symptomatic_month_averted))
-summary(results_aftermath$cost_per_infectious_months_averted)
-
-summary(results_earlier$cost_per_symptomatic_month_averted)
-summary(results_earlier$cost_per_infectious_months_averted)
-
-summary(results_targeted$cost_per_symptomatic_month_averted)
-summary(results_targeted$cost_per_infectious_months_averted)
-
-summary(results_sputum$cost_per_symptomatic_month_averted)
-summary(results_sputum$cost_per_infectious_months_averted)
-
-summary(results_moretargeted$cost_per_symptomatic_month_averted)
-summary(results_moretargeted$cost_per_infectious_months_averted)
-
-summary(results_home_improves_passive$cost_per_symptomatic_month_averted)
-summary(results_home_improves_passive$cost_per_infectious_months_averted)
-
 
 # sensitivty analysis
 # for each parameter in cohort_param_ranges, compare results$cost_per_symptomatic_case_averted 
