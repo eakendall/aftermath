@@ -4,11 +4,11 @@ from scipy.stats import gamma
 from scipy.optimize import minimize
 
 # Parameters for truncation
-a, b = 0, 540 - 2 * 17   # truncated domain [0, 506]
+a, b = 0, 540 - 2 * 17    # truncated domain [0, 506], corresponds to diagnosis by day 540 with 17*2 days of symptoms
 
-# Target mean and median for the truncated distribution
-target_mean = 192
-target_median = 149
+# Target mean and median for the truncated distribution of time to symptom onset (after disaese course analysis.R, line 92)
+target_mean = 184
+target_median = 146
 
 # Function to compute truncated mean and truncated median from gamma parameters
 def truncated_statistics(params):
