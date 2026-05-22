@@ -38,7 +38,7 @@ empirical_diagnosis_hazard_540 <-
 
 observed_diagnosis_times <- data %>%
   filter(
-    micropos == 1,
+    recurrence == 1,
     txcompl_endreason_days > 0,
     txcompl_endreason_days <= diagnosis_horizon_days
   ) %>%

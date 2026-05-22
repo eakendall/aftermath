@@ -47,6 +47,10 @@ if (run_cohort_features)
             cum_months_inf = numeric(N_samples),
             cum_months_sx_24mo = numeric(N_samples),
             cum_months_inf_24mo = numeric(N_samples),
+            prev_subclinical_6mo = numeric(N_samples),
+            prev_subclinical_12mo = numeric(N_samples),
+            cum_months_subclinical = numeric(N_samples),
+            cum_months_subclinical_24mo = numeric(N_samples),
             duration_diagnosed_before_6 = numeric(N_samples),
             duration_diagnosed_before_9 = numeric(N_samples),
             duration_diagnosed_after_6 = numeric(N_samples),
@@ -145,19 +149,29 @@ if (run_cohort_features)
       sum(cohort$symptom_onset < 6*30 & cohort$diagnosis_routine >= 6*30, na.rm=T)/N_cohort
     cohort_features[n, "prev_inf_6mo"] <-
       sum(cohort$sputum_onset < 6*30 & cohort$diagnosis_routine >= 6*30, na.rm=T)/N_cohort
+    cohort_features[n, "prev_subclinical_6mo"] <-
+      sum(cohort$sputum_onset < 6*30 & cohort$symptom_onset >= 6*30, na.rm=T)/N_cohort
+    
     cohort_features[n, "prev_sx_12mo"] <-
       sum(cohort$symptom_onset < 12*30 & cohort$diagnosis_routine >= 12*30, na.rm=T)/N_cohort
     cohort_features[n, "prev_inf_12mo"] <-
       sum(cohort$sputum_onset < 12*30 & cohort$diagnosis_routine >= 12*30, na.rm=T)/N_cohort
+    cohort_features[n, "prev_subclinical_12mo"] <-
+      sum(cohort$sputum_onset < 12*30 & cohort$symptom_onset >= 12*30, na.rm=T)/N_cohort
+    
     cohort_features[n, "cum_months_sx"] <-
       sum(cohort$diagnosis_routine - cohort$symptom_onset, na.rm=T)/30
     cohort_features[n, "cum_months_inf"] <-
       sum(cohort$diagnosis_routine - cohort$sputum_onset, na.rm=T)/30
+    cohort_features[n, "cum_months_subclinical"] <-
+      sum(pmax(cohort$symptom_onset - cohort$sputum_onset,0), na.rm=T)/30
+    
     cohort_features[n, "cum_months_sx_24mo"] <-
-      sum(pmin(cohort$diagnosis_routine, 24*30) - pmin(cohort$symptom_onset, 24*30), na.rm=T)/30
+      sum(pmax(pmin(cohort$diagnosis_routine,24*30) - pmin(cohort$symptom_onset,24*30),0), na.rm=T)/30
     cohort_features[n, "cum_months_inf_24mo"] <-
-      sum(pmin(cohort$diagnosis_routine, 24*30) - pmin(cohort$sputum_onset, 24*30), na.rm=T)/30
-      
+      sum(pmax(pmin(cohort$diagnosis_routine,24*30) - pmin(cohort$sputum_onset,24*30),0), na.rm=T)/30
+    cohort_features[n, "cum_months_subclinical_24mo"] <-
+      sum(pmax(pmin(cohort$symptom_onset,24*30) - pmin(cohort$sputum_onset,24*30),0), na.rm=T)/30    
     
     cohort_features[n, "duration_diagnosed_before_6"] <- 
       mean(cohort$diagnosis_routine[cohort$TB==1 & cohort$diagnosis_routine <= 6*30] - 
@@ -237,12 +251,12 @@ if (run_cohort_features)
     
   }        
 
-saveRDS(cohort_features, file="cohort_features.rds")    
-saveRDS(cascade_features, file="cascade_features.rds")    
+saveRDS(cohort_features, file="cohort_features_260522.rds")    
+saveRDS(cascade_features, file="cascade_features_260522.rds")    
 } else {
   cohort_params <- readRDS(file="cohort_params_final.rds")    
-  cohort_features <- readRDS(file="cohort_features6.rds")
-  cascade_features <- readRDS(file="cascade_features.rds")
+  cohort_features <- readRDS(file="cohort_features_260522.rds")
+  cascade_features <- readRDS(file="cascade_features_260522.rds")
 }
       
 #### Evaluate cohort characteristics and natural history results ####
@@ -620,7 +634,7 @@ screening_design_five_visits_sputum <-
 
 
 #### Run the interventions across all parameter sets ####
-run_interventions <- FALSE
+run_interventions <- TRUE
 if (run_interventions)
 {                       
   results <- list()
@@ -688,8 +702,8 @@ if (run_interventions)
       
   }
   
-  saveRDS(results, "results_aftermath__20260126.RDS")
-} else results <- readRDS("results_aftermath__20260126.RDS")
+  saveRDS(results, "results_aftermath__20260522.RDS")
+} else results <- readRDS("results_aftermath__20260522.RDS")
 
 #### Look at results ####
 # collate results for a table:
@@ -1296,7 +1310,8 @@ small <- plot_screening(cohort = testcohort %>% #10% sample of rows
                screening_design = screening_design_guidelines, #screening_design_6m_sx, 
                colorfill = TRUE) + ylim(0,110)
 small
-  
+large  
+
 library(cowplot)
 # arrange as two panels side by side, A large labeled as full cohort and B small labeled as random 20% subset
 final_plot <- plot_grid(

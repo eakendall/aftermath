@@ -5,8 +5,6 @@ library(conflicted)
 
 conflicts_prefer(dplyr::summarize)
 
-source("aftermath cohort sim functions.R")
-
 N_cohort <- 10000
 N_samples <- 5000
 
@@ -50,17 +48,18 @@ cohort_param_ranges <- list(
   proportion_ever_subclinical = c(0.6, 0.9),
   duration_ratio_subclinical_symptomatic = c(0.8, 1.2),
   duration_subclinical_cv = c(0.5, 1.5),
-  subclinical_baseline_amongTB_max = 0.20,
+  proportion_subclinical_sputumpos_at_eot = c(0, 0.20), 
+  max_subclinical_fraction_of_presymptom_time = c(0.7, 1.0),
   subclinical_6m_amongcohort_min = 0.004,
   subclinical_6m_amongcohort_max = 0.017,
   
   #### Intervention parameters ####
   coverage_phone = c(0.9, 1.0),
   coverage_home_reduction = c(0.75, 0.95),
-  sensitivity_symptoms_home = c(0.85, 0.95),
+  sensitivity_symptoms_home = c(0.7, 0.9),
   sensitivity_symptoms_phone_reduction = c(0.6, 0.82),
   # fixed_empirical_inputs$relative_symptom_reporting_phone
-  success_sputum_home = 1, #c(0.85, 0.95), # assuming can swab tongue if participating
+  success_sputum_home = c(0.9, 1.0), # assuming can swab tongue if participating
   success_sputum_phone_reduction = c(0.6, 1.0),
   
   home_visit_passive_detection_impact = 1,
