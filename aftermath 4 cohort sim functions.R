@@ -35,31 +35,20 @@ create_cohort <- function(cohort_params)
           TRUE ~ 0
         )
       )    
-    #### Timing of routine diagnosis ####
-    # Use lognormal to capture trial distribution of reported symptom durations (trial data mean duration 17 days, sd 14 days)
     
-    # Under routine conditions, the time to routine diagnosis increases by factor programmatic_symptom_duration_factor
+    #### Timing of routine diagnosis ####
+    # Use lognormal to capture trial distribution of reported symptom durations
     
     cohort <- cohort %>%
       mutate(
-        raw_symptom_duration = case_when(
+        symptom_duration = case_when(
           TB == 1 ~
             1 / reported_fraction_of_true_symptom_duration /
             home_visit_passive_detection_impact *
-            programmatic_symptom_duration_factor *
             rlnorm(
               n = n(),
               meanlog = symptom_duration_meanlog_reported,
               sdlog = symptom_duration_sdlog_reported
-            ),
-          TRUE ~ NA_real_
-        ),
-        
-        symptom_duration = case_when(
-          TB == 1 ~
-            pmin(
-              raw_symptom_duration,
-              max_symptom_duration_fraction_of_onset_time * symptom_onset
             ),
           TRUE ~ NA_real_
         ),
@@ -69,7 +58,7 @@ create_cohort <- function(cohort_params)
           TRUE ~ NA_real_
         )
       )
-     
+    
     #### Subclinical TB ####
     
     symptom_duration_mean_reported <- exp(
@@ -104,72 +93,39 @@ create_cohort <- function(cohort_params)
             ),
           TRUE ~ 0
         ))
-    
-    cohort <- cohort %>% mutate(sputumpos_at_eot = 0)
-    
-    eligible_eot <- which(cohort$ever_subclinical_sputumpos == 1)
-    
-    n_eot <- round(length(eligible_eot) * proportion_subclinical_sputumpos_at_eot)
-    
-    if (length(eligible_eot) > 0 && n_eot > 0) {
-      eot_weights <- 1 / pmax(cohort$symptom_onset[eligible_eot], 1)
+
+    cohort <- cohort %>% mutate(
+      subclinical_duration = case_when(
+        ever_subclinical_sputumpos == 1 ~
+          base_mean_duration_subclinical *
+          rgamma(
+            n = n(),
+            shape = 1 / duration_subclinical_cv^2,
+            scale = duration_subclinical_cv^2
+          ),
+        TRUE ~ NA_real_
+      ),
       
-      eot_selected <- sample(
-        eligible_eot,
-        size = min(n_eot, length(eligible_eot)),
-        prob = eot_weights,
-        replace = FALSE
-      )
-      
-      cohort$sputumpos_at_eot[eot_selected] <- 1
-    }
-    
-    
-     cohort <- cohort %>% mutate(
-        raw_subclinical_duration = case_when(
-          ever_subclinical_sputumpos == 1 &
-            sputumpos_at_eot == 0 ~
-            base_mean_duration_subclinical *
-            rgamma(
-              n = n(),
-              shape = 1 / duration_subclinical_cv^2,
-              scale = duration_subclinical_cv^2
-            ),
-          TRUE ~ NA_real_
-        ),
+      sputum_onset = case_when(
+        ever_subclinical_sputumpos == 1 ~
+          symptom_onset - subclinical_duration,
         
-        capped_subclinical_duration = case_when(
-          ever_subclinical_sputumpos == 1 &
-            sputumpos_at_eot == 0 ~
-            pmin(
-              raw_subclinical_duration,
-              max_subclinical_fraction_of_presymptom_time * symptom_onset
-            ),
-          TRUE ~ NA_real_
-        ),
+        ever_subclinical_sputumpos == 0 &
+          pulmonary_with_micro == 1 ~
+          runif(
+            n = n(),
+            min = symptom_onset,
+            max = diagnosis_routine
+          ),
         
-        sputum_onset = case_when(
-          ever_subclinical_sputumpos == 1 &
-            sputumpos_at_eot == 1 ~
-            0,
-          
-          ever_subclinical_sputumpos == 1 &
-            sputumpos_at_eot == 0 ~
-            symptom_onset - capped_subclinical_duration,
-          
-          ever_subclinical_sputumpos == 0 &
-            pulmonary_with_micro == 1 ~
-            runif(
-              n = n(),
-              min = symptom_onset,
-              max = diagnosis_routine
-            ),
-          
-          TRUE ~ NA_real_
-        )
+        TRUE ~ NA_real_
       )
-     
-     cohort <- cohort %>%
+    ) %>%
+      mutate(
+        sputum_onset = pmax(sputum_onset, 0)
+      )
+    
+    cohort <- cohort %>%
        mutate(
          diagnosis_routine_original = diagnosis_routine,
          TB_original = TB,
@@ -227,12 +183,18 @@ simulate_auc <- function(auc)
 check_subclinical <- function(cohort, cohort_params)
 {
   # check the proportion of subclinical cases at baseline:
-  subclinical_baseline_amongTB <- cohort %>% filter(TB == 1) %>% summarize(sum(sputum_onset==0, na.rm=T))/
-    cohort %>% filter(TB == 1) %>% summarize(n())
-  subclinical_6mo_amongcohort <- cohort %>% summarize(sum(sputum_onset<180 & symptom_onset >= 180, na.rm=T))/
+   subclinical_baseline_amongTB <-
+    mean(cohort$sputum_onset <= 0, na.rm = TRUE)
+   subclinical_6mo_amongcohort <- cohort %>% summarize(sum(sputum_onset<180 & symptom_onset >= 180, na.rm=T))/
     cohort %>% summarize(n())
-  if (subclinical_6mo_amongcohort > cohort_params$subclinical_6m_amongcohort_min & 
-      subclinical_6mo_amongcohort < cohort_params$subclinical_6m_amongcohort_max)
+   if (
+     subclinical_baseline_amongTB <
+     cohort_params$subclinical_baseline_amongTB_max &
+     subclinical_6mo_amongcohort >
+     cohort_params$subclinical_6m_amongcohort_min &
+     subclinical_6mo_amongcohort <
+     cohort_params$subclinical_6m_amongcohort_max
+   )
     return(TRUE) else
       return(FALSE)
 }

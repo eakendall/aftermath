@@ -11,7 +11,7 @@ N_cohort <- cohort_params$N[1]
 run_cohort_features <- TRUE
 run_interventions <- TRUE
 apply_subclinical_filter <- FALSE
-date <- "20260527"
+date <- "20260527_reverted"
 
 
 ##### For each sample, simulate a cohort and describe key features: ####
@@ -259,7 +259,7 @@ if (run_cohort_features)
 saveRDS(cohort_features, file=paste0("cohort_features_",date,".rds"))    
 saveRDS(cascade_features, file=paste0("cascade_features_",date,".rds"))    
 } else {
-  cohort_params <- readRDS(file="cohort_params_final.rds")    
+  cohort_params <- readRDS(file="outputs/cohort_params_final.rds")    
   cohort_features <- readRDS(file=paste0("cohort_features_",date,".rds"))
   cascade_features <- readRDS(file=paste0("cascade_features_",date,".rds"))
 }
@@ -719,7 +719,11 @@ if (run_interventions)
 # for all dataframe elements of list "results", report the mean and 25th and 75th percentiles of each column
 
 results_unfiltered <- results
-results <- results_filtered <- results %>% filter(accepted_subclinical)
+accepted_index <- cohort_features$accepted_subclinical == 1
+results <- results_filtered <- lapply(
+  results,
+  function(x) x[accepted_index, ]
+)
 
 cbind(
   lapply(results, function(x) 
@@ -1074,12 +1078,10 @@ proportion_micro_pos = "Proportion bacteriologically+ at diagnosis",
 symptom_duration_meanlog_reported = "Mean log duration of reported symptoms",
 symptom_duration_sdlog_reported = "SD log of duration of reported symptoms",
 reported_fraction_of_true_symptom_duration = "Underestimation of symptom duration",
-programmatic_symptom_duration_factor =            "Increase in symptom duration, programmatic",
 proportion_ever_subclinical = "Proportion with an asymptomatic bact+ period",
 duration_ratio_subclinical_symptomatic= "Relative time asymptomatic vs symptomatic",
 duration_subclinical_cv= "Coefficient of variation in asymptomatic duration",
-proportion_subclinical_sputumpos_at_eot = "Maximum proportion of cohort with subclinical TB at baseline",
-max_subclinical_fraction_of_presymptom_time = "Maximum proportion of presymptomatic time spent with TB", 
+subclinical_baseline_amongTB_max = "Maximum proportion with subclinical TB at treatment completion",
 subclinical_6m_amongcohort_min = "Minimum proportion of cohort with subclinical TB at 6 months",
 subclinical_6m_amongcohort_max = "Maximum proportion of cohort with subclinical TB at 6 months",
 coverage_phone =            "Coverage of phone-based screening",

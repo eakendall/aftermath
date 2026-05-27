@@ -1,5 +1,7 @@
 # plot consistency of simulated cohorts with aftermath data
 
+# plot consistency of simulated cohorts with aftermath data
+
 # time to diagnosis
 
 # plot survival_dataset_truncated with confidence ribbon for time to event
@@ -56,12 +58,23 @@ cuminc_fit <- cuminc(Surv(time, as.factor(event)) ~ 1, data = survival_dataset_t
     scale_ggsurvfit())
 
 
+dataplotbase + stat_ecdf(data = 
+                           data.frame(tb = rbinom(100000, size = 1, prob = 0.11)) %>%
+                           mutate(symptom_onset = case_when(tb==1 ~ rweibull(n=n(), scale = 406, shape=0.75),
+                                                            TRUE ~ 10000),
+                                  diagnosis_routine = symptom_onset + 
+                                    rlnorm(n=n(), meanlog = 2.69, sdlog = 0.68)*2), # * (symptom_onset/184)^0.25), 
+                         aes(x = diagnosis_routine), col = "blue") + coord_cartesian(xlim = c(0,30*24), ylim=c(0,0.12)) + 
+  scale_x_continuous(breaks = seq(0, 24*30, by = 3*30), labels = seq(0, 24, by = 3)) + 
+  xlab("Months since treatment completion") + 
+  ylab("Cumulative notifications of recurrent TB") 
+
+
 # overlay simulated timing
 # For each set of cohort_params, simulate a cohort and plot the distribution of diagnosis_routing
 set.seed(12345)
-N_samples <- 5000
 
-for (n in 1:200){ #nrow(cohort_params)) {
+for (n in 1: min(500, nrow(cohort_params))) {
   params <- cohort_params[n, ]
   
   cohort <- create_cohort(params)
@@ -82,8 +95,7 @@ dataplot + coord_cartesian(xlim = c(0,30*18), ylim=c(0,0.12)) +
   ylab("Cumulative notifications of recurrent TB") 
 
 
-
-#### Compare timing of clinical and micro diagnoses (Fig S2): ###
+# Compare timing of clinical and micro diagnoses:
 ggplot(data %>% filter(end_reason == "TB recurrence"), 
        aes(x = txcompl_endreason_days/30, color = as.factor(micropos))) +
   stat_ecdf() +
@@ -94,6 +106,7 @@ ggplot(data %>% filter(end_reason == "TB recurrence"),
   scale_color_discrete(name = "TB type", labels = c("Micro+ pulmonary", "Other")) + 
   theme_minimal()
 # Looks pretty similar.
+
 
 
 
@@ -119,7 +132,9 @@ exclude_parameters <- c(
   "sensitivity_symptoms_phone", "success_sputum_phone",
   "recurrence_shape", "recurrence_scale", "recurrence_time_mean", "recurrence_time_cv",
   "probability_dx540_given_recur", "probability_ever_recur", "prevention_cost",
-  "objective_value"
+  "objective_value",
+  "mean_symptom_duration_by_540_sim", "median_symptom_duration_by_540_sim", 
+  "prop_onset_le_7_among_dx540_sim",  "prop_onset_le_30_among_dx540_sim"
 )
 
 sampled_parameters <- setdiff(sampled_parameters, exclude_parameters)
@@ -130,19 +145,18 @@ nice_names <- c(
   proportion_micro_pos = "Proportion NAAT-positive at diagnosis",
   symptom_duration_sdlog_reported = "SD log reported symptom duration",
   reported_fraction_of_true_symptom_duration = "Reported fraction of true symptom duration",
-  programmatic_symptom_duration_factor = "Programmatic delay factor",
-  proportion_ever_subclinical = "Proportion with subclinical NAAT+ period",
+  proportion_ever_subclinical = "Proportion with asymptomatic  NAAT+ period",
   duration_ratio_subclinical_symptomatic = "Asymptomatic:symptomatic NAAT+ time ratio",
-  duration_subclinical_cv = "CV, subclinical duration",
-  proportion_subclinical_sputumpos_at_eot = "NAAT+ at treatment completion",
-  max_subclinical_fraction_of_presymptom_time = "Maximum subclinical duration fraction",
-  subclinical_6m_amongcohort_min = "Minimum 6-month subclinical prevalence",
-  subclinical_6m_amongcohort_max = "Maximum 6-month subclinical prevalence",
-  median_dx_by_540_sim= "Median days to diagnosis (if dx by 18mo)",
-  p25_dx_by_540_sim = "LQR, days to diagnosis (if dx by 18mo)",
-  p75_dx_by_540_sim = "UQR, days to diagnosis (if dx by 18mo)",
-  prop_dx_le_90_among_dx540_sim = "Proportion diagnosed by day 90 (if dx by 18mo)",
-  prop_dx_le_360_among_dx540_sim = "Proportion diagnosed by day 360 (if dx by 18mo)"
+  duration_subclinical_cv = "Coefficient of variation, asymptomatic TB duration",
+  subclinical_baseline_amongTB_max =
+    "Maximum subclinical prevalence at treatment completion",
+  subclinical_6m_amongcohort_min = "Minimum 6-month asymptomatic TB prevalence",
+  subclinical_6m_amongcohort_max = "Maximum 6-month asymptomatic TB prevalence",
+  median_dx_by_540_sim= "Median days to diagnosis (if diagnosed by 18mo)",
+  p25_dx_by_540_sim = "25th quantile, days to diagnosis (if diagnosed by 18mo)",
+  p75_dx_by_540_sim = "75th quantile, days to diagnosis (if diagnosed by 18mo)",
+  prop_dx_le_90_among_dx540_sim = "Proportion diagnosed by day 90 (if diagnosed by 18mo)",
+  prop_dx_le_360_among_dx540_sim = "Proportion diagnosed by day 360 (if diagnosed by 18mo)"
   
 )
 
@@ -199,14 +213,20 @@ write_csv(
   "outputs/subclinical_acceptance_parameter_outcome_summary.csv"
 )
 
+nice_order <- nice_names[names(nice_names) %in% sampled_parameters] %>%
+  unname() %>%
+  stringr::str_wrap(width = 22)
+
 param_compare_data <- param_compare_data %>%
   mutate(
     nice_quantity = recode(quantity, !!!nice_names),
     nice_quantity = stringr::str_wrap(nice_quantity, width = 22),
+    nice_quantity = factor(nice_quantity, levels = nice_order),
     accepted_label = ifelse(accepted_subclinical, "Retained", "Rejected")
   )
-
+#maintain ordering of nice_names in plot
 param_compare_plot <- param_compare_data %>%
+  
   filter(type == "Sampled parameter") %>%
   ggplot(aes(x = accepted_label, y = value, color = accepted_label)) +
   geom_violin(trim = TRUE) +

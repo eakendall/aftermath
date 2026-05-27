@@ -63,8 +63,7 @@ simulate_recurrence_course <- function(
     recurrence_scale,
     symptom_duration_meanlog_reported,
     symptom_duration_sdlog_reported,
-    reported_fraction_of_true_symptom_duration,
-    max_symptom_duration_fraction_of_onset_time
+    reported_fraction_of_true_symptom_duration
 ) {
   onset <- rweibull(
     n,
@@ -78,20 +77,13 @@ simulate_recurrence_course <- function(
     sdlog = symptom_duration_sdlog_reported
   )
   
-  true_symptom_duration_raw <-
-    reported_symptom_duration / reported_fraction_of_true_symptom_duration
-  
   true_symptom_duration <-
-    pmin(
-      true_symptom_duration_raw,
-      max_symptom_duration_fraction_of_onset_time * onset
-    )
+    reported_symptom_duration / reported_fraction_of_true_symptom_duration
   
   diagnosis_time <- onset + true_symptom_duration
   
   tibble(
     onset = onset,
-    true_symptom_duration_raw = true_symptom_duration_raw,
     true_symptom_duration = true_symptom_duration,
     diagnosis_time = diagnosis_time
   )
@@ -111,7 +103,6 @@ summarize_dx <- function(sim_data, horizon = 540) {
       probability_dx540_given_recur = mean(diagnosis_time <= horizon),
       mean_symptom_duration_by_540 = NA_real_,
       median_symptom_duration_by_540 = NA_real_,
-      mean_raw_symptom_duration_by_540 = NA_real_,
       prop_onset_le_7_among_dx540 = NA_real_,
       prop_onset_le_30_among_dx540 = NA_real_
     ))
@@ -130,8 +121,6 @@ summarize_dx <- function(sim_data, horizon = 540) {
       mean(sim_data$true_symptom_duration[dx540_index], na.rm = TRUE),
     median_symptom_duration_by_540 =
       median(sim_data$true_symptom_duration[dx540_index], na.rm = TRUE),
-    mean_raw_symptom_duration_by_540 =
-      mean(sim_data$true_symptom_duration_raw[dx540_index], na.rm = TRUE),
     prop_onset_le_7_among_dx540 =
       mean(sim_data$onset[dx540_index] <= 7, na.rm = TRUE),
     prop_onset_le_30_among_dx540 =
@@ -159,8 +148,7 @@ fit_one_draw <- function(draw_row, i, n_total) {
   message(
     "[", i, "/", n_total, "] draw=", draw_row$draw,
     " | fraction=", round(draw_row$reported_fraction_of_true_symptom_duration, 3),
-    " | sdlog=", round(draw_row$symptom_duration_sdlog_reported, 3),
-    " | max symptom frac=", round(draw_row$max_symptom_duration_fraction_of_onset_time, 2)
+    " | sdlog=", round(draw_row$symptom_duration_sdlog_reported, 3)
   )
   
   incidence_18mo <-
@@ -181,9 +169,7 @@ fit_one_draw <- function(draw_row, i, n_total) {
       symptom_duration_sdlog_reported =
         draw_row$symptom_duration_sdlog_reported,
       reported_fraction_of_true_symptom_duration =
-        draw_row$reported_fraction_of_true_symptom_duration,
-      max_symptom_duration_fraction_of_onset_time =
-        draw_row$max_symptom_duration_fraction_of_onset_time
+        draw_row$reported_fraction_of_true_symptom_duration
     )
     
     sim_targets <- summarize_dx(
@@ -243,9 +229,7 @@ fit_one_draw <- function(draw_row, i, n_total) {
     symptom_duration_sdlog_reported =
       draw_row$symptom_duration_sdlog_reported,
     reported_fraction_of_true_symptom_duration =
-      draw_row$reported_fraction_of_true_symptom_duration,
-    max_symptom_duration_fraction_of_onset_time =
-      draw_row$max_symptom_duration_fraction_of_onset_time
+      draw_row$reported_fraction_of_true_symptom_duration
   )
   
   final_targets <- summarize_dx(
@@ -294,8 +278,6 @@ fit_one_draw <- function(draw_row, i, n_total) {
       final_targets$mean_symptom_duration_by_540,
     median_symptom_duration_by_540_sim =
       final_targets$median_symptom_duration_by_540,
-    mean_raw_symptom_duration_by_540_sim =
-      final_targets$mean_raw_symptom_duration_by_540,
     prop_onset_le_7_among_dx540_sim =
       final_targets$prop_onset_le_7_among_dx540,
     prop_onset_le_30_among_dx540_sim =

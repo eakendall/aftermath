@@ -36,17 +36,13 @@ cohort_param_ranges <- list(
   ####Symptom_underestimation_factor ####
   # Reported duration is this fraction of true duration.
   # true_duration = reported_duration / reported_fraction_of_true_symptom_duration
-  reported_fraction_of_true_symptom_duration = c(1/6, 1/2),
-  ### Aftermath faster care-seeking factor ### 
-  programmatic_symptom_duration_factor = c(1, 2),
+  reported_fraction_of_true_symptom_duration = c(1/8, 1/2),
   
   #### Subclinical natural history ####
   proportion_ever_subclinical = c(0.6, 0.9),
   duration_ratio_subclinical_symptomatic = c(0.8, 1.2),
   duration_subclinical_cv = c(0.5, 1.5),
-  proportion_subclinical_sputumpos_at_eot = c(0, 0.20), 
-  max_subclinical_fraction_of_presymptom_time = c(0.7, 1.0),
-  max_symptom_duration_fraction_of_onset_time = c(0.7, 1.0),
+  subclinical_baseline_amongTB_max = 0.20,
   subclinical_6m_amongcohort_min = 0.004,
   subclinical_6m_amongcohort_max = 0.017,
   
