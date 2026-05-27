@@ -40,14 +40,35 @@ create_cohort <- function(cohort_params)
     
     # Under routine conditions, the time to routine diagnosis increases by factor programmatic_symptom_duration_factor
     
-      cohort <- cohort %>% mutate(diagnosis_routine = case_when(
-        TB == 1 ~ symptom_onset + 
-                    (1/reported_fraction_of_true_symptom_duration/home_visit_passive_detection_impact * 
-                       programmatic_symptom_duration_factor *
-                      rlnorm(n = n(), meanlog = symptom_duration_meanlog_reported,
-                                        sdlog = symptom_duration_sdlog_reported)),
-            TRUE ~ NA_real_))
-    
+    cohort <- cohort %>%
+      mutate(
+        raw_symptom_duration = case_when(
+          TB == 1 ~
+            1 / reported_fraction_of_true_symptom_duration /
+            home_visit_passive_detection_impact *
+            programmatic_symptom_duration_factor *
+            rlnorm(
+              n = n(),
+              meanlog = symptom_duration_meanlog_reported,
+              sdlog = symptom_duration_sdlog_reported
+            ),
+          TRUE ~ NA_real_
+        ),
+        
+        symptom_duration = case_when(
+          TB == 1 ~
+            pmin(
+              raw_symptom_duration,
+              max_symptom_duration_fraction_of_onset_time * symptom_onset
+            ),
+          TRUE ~ NA_real_
+        ),
+        
+        diagnosis_routine = case_when(
+          TB == 1 ~ symptom_onset + symptom_duration,
+          TRUE ~ NA_real_
+        )
+      )
      
     #### Subclinical TB ####
     

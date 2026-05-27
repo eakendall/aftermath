@@ -21,10 +21,6 @@ fixed_empirical_inputs <- readRDS("outputs/fixed_empirical_inputs.rds")
 cohort_param_ranges <- list(
   N = N_cohort,
   
-  #### To be applied downstream after Weibull fitting ####
-  recurrence_time_mean_multiplier = c(0.8, 1.2),
-  recurrence_time_cv_multiplier = c(0.8, 1.2),
-  
   #### Empirical / semi-empirical parameters ####
   incidence_18mo_multiplier = c(0.8, 1.2), # now refers to incidence of diagnosis by 540d not onset. Wider uncertainty than estimated from aftermath directly, but that's appropriate because of simplifications in weibull fitting.
   proportion_micro_pos = c(0.42, 0.64),
@@ -50,6 +46,7 @@ cohort_param_ranges <- list(
   duration_subclinical_cv = c(0.5, 1.5),
   proportion_subclinical_sputumpos_at_eot = c(0, 0.20), 
   max_subclinical_fraction_of_presymptom_time = c(0.7, 1.0),
+  max_symptom_duration_fraction_of_onset_time = c(0.7, 1.0),
   subclinical_6m_amongcohort_min = 0.004,
   subclinical_6m_amongcohort_max = 0.017,
   

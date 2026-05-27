@@ -8,10 +8,15 @@ cohort_params <- readRDS("outputs/cohort_params_final.rds")
 N_samples <- nrow(cohort_params)
 N_cohort <- cohort_params$N[1]  
 
+run_cohort_features <- TRUE
+run_interventions <- TRUE
+apply_subclinical_filter <- FALSE
+date <- "20260527"
+
+
 ##### For each sample, simulate a cohort and describe key features: ####
  # month with highest incidence, month with highest undiagnosed prevalence (symptomatic and sputum+, and overall), and 
 # remaining expected duration of prevalent disease at each of 3, 6, 9, 12, 15, and 18mo
-run_cohort_features <- TRUE
 if (run_cohort_features)
 {
   cohort_features <- 
@@ -251,12 +256,12 @@ if (run_cohort_features)
     
   }        
 
-saveRDS(cohort_features, file="cohort_features_260522.rds")    
-saveRDS(cascade_features, file="cascade_features_260522.rds")    
+saveRDS(cohort_features, file=paste0("cohort_features_",date,".rds"))    
+saveRDS(cascade_features, file=paste0("cascade_features_",date,".rds"))    
 } else {
   cohort_params <- readRDS(file="cohort_params_final.rds")    
-  cohort_features <- readRDS(file="cohort_features_260522.rds")
-  cascade_features <- readRDS(file="cascade_features_260522.rds")
+  cohort_features <- readRDS(file=paste0("cohort_features_",date,".rds"))
+  cascade_features <- readRDS(file=paste0("cascade_features_",date,".rds"))
 }
       
 #### Evaluate cohort characteristics and natural history results ####
@@ -634,7 +639,6 @@ screening_design_five_visits_sputum <-
 
 
 #### Run the interventions across all parameter sets ####
-run_interventions <- TRUE
 if (run_interventions)
 {                       
   results <- list()
@@ -655,9 +659,9 @@ if (run_interventions)
     print(n)
     #### More parameter-specific setup ####
     cohort <- create_cohort(cohort_params[n,])
-    # if doesn't validate on subclinical TB, abort and fill NAs
-    if (!check_subclinical(cohort, cohort_params[n,])) {
-      # change the nth element of each item in results to NA
+    # if doesn't validate on subclinical TB, abort and fill NAs -- only if applying subclinical filter
+    
+    if (apply_subclinical_filter && !check_subclinical(cohort, cohort_params[n,])) {
       for (name in intervention_names) 
         results[[name]][n,] <- rep(NA, ncol(results[[name]]))
       next
@@ -682,16 +686,16 @@ if (run_interventions)
     }
     
     # impact
-    (recurred = lapply(outputs, function(x) sum(x$TB)))
+    recurred = lapply(outputs, function(x) sum(x$TB))
     
-    (detected <- lapply(outputs, function(x) sum(!is.na(x$detection_timing))))
-    (symptomdays <- lapply(outputs, function(x) ((time_with_tb(x, limit_days = 30*24) %>% filter(scenario == "screening") %>% select(value))/sum(x$TB))[1,]))
-    (time <- lapply(outputs, function(x) time_with_tb(x, limit_days = 30*24) %>% filter(scenario == "soc") %>% 
+    detected <- lapply(outputs, function(x) sum(!is.na(x$detection_timing)))
+    symptomdays <- lapply(outputs, function(x) ((time_with_tb(x, limit_days = 30*24) %>% filter(scenario == "screening") %>% select(value))/sum(x$TB))[1,])
+    time <- lapply(outputs, function(x) time_with_tb(x, limit_days = 30*24) %>% filter(scenario == "soc") %>% 
                       mutate(months = value/30) %>%
-                      tibble::column_to_rownames('outcome') %>% select(months)))
-    (impact <- lapply(outputs, function(x) (time_with_tb(x, limit_days = 30*24)  %>% pivot_wider(names_from = "scenario", values_from = "value") %>% 
+                      tibble::column_to_rownames('outcome') %>% select(months))
+    impact <- lapply(outputs, function(x) (time_with_tb(x, limit_days = 30*24)  %>% pivot_wider(names_from = "scenario", values_from = "value") %>% 
                                               mutate(months_averted = (soc - screening)/30)) %>% 
-                        tibble::column_to_rownames('outcome')  %>% select(months_averted)))
+                        tibble::column_to_rownames('outcome')  %>% select(months_averted))
     
     
     for (name in intervention_names)
@@ -699,15 +703,23 @@ if (run_interventions)
                                 detected[[name]], symptomdays[[name]], time[[name]]$months[1], time[[name]]$months[2], 
                                 impact[[name]]$months_averted[1], impact[[name]]$months_averted[2],
                                 cost[[name]])
+    rm(outputs, cost, recurred, detected, symptomdays, time, impact)
+    rm(cohort, intervention_parameters)
+    if (n %% 25 == 0) gc()
       
   }
   
-  saveRDS(results, "results_aftermath__20260522.RDS")
-} else results <- readRDS("results_aftermath__20260522.RDS")
+  if (apply_subclinical_filter) 
+    saveRDS(results, paste0("results_aftermath_",date,".RDS")) else 
+      saveRDS(results, paste0("results_no_subclinical_filter_",date,".RDS"))
+} else results <- readRDS(paste0("results_aftermath_",date,".RDS"))
 
 #### Look at results ####
 # collate results for a table:
 # for all dataframe elements of list "results", report the mean and 25th and 75th percentiles of each column
+
+results_unfiltered <- results
+results <- results_filtered <- results %>% filter(accepted_subclinical)
 
 cbind(
   lapply(results, function(x) 
@@ -1055,67 +1067,61 @@ quantile((results$earlier_three_sputum$infectious_months_averted - results$earli
 
 
 # create a data frame of nice names for all the paramters
-param_names <- data.frame(
-  parameter = colnames(cohort_params),
-  # [1] "draw"                                              "N"                                                
-  # [3] "recurrence_time_mean_multiplier"                   "recurrence_time_cv_multiplier"                    
-  # [5] "incidence_18mo_multiplier"                         "proportion_micro_pos"                             
-  # [7] "auc"                                               "symptom_duration_meanlog_reported"                
-  # [9] "symptom_duration_sdlog_reported"                   "reported_fraction_of_true_symptom_duration"       
-  # [11] "programmatic_symptom_duration_factor"              "proportion_ever_subclinical"                      
-  # [13] "duration_ratio_subclinical_symptomatic"            "duration_subclinical_cv"                          
-  # [15] "subclinical_baseline_amongTB_max"                  "subclinical_6m_amongcohort_min"                   
-  # [17] "subclinical_6m_amongcohort_max"                    "coverage_phone"                                   
-  # [19] "coverage_home_reduction"                           "sensitivity_symptoms_home"                        
-  # [21] "sensitivity_symptoms_phone_reduction"              "success_sputum_home"                              
-  # [23] "success_sputum_phone_reduction"                    "home_visit_passive_detection_impact"              
-  # [25] "intentional_counseling_passive_detection_impact"   "intentional_counseling_passive_detection_duration"
-  # [27] "prevention_efficacy"                               "initial_contact_cost_home"                        
-  # [29] "initial_contact_cost_home_vs_phone_factor"         "sputum_test_cost"                                 
-  # [31] "symptom_prevalence_nontb"                          "prevention_cost"                                  
-  # [33] "case_fatality"                                     "initial_contact_cost_phone"                       
-  # [35] "coverage_home"                                     "sensitivity_symptoms_phone"                       
-  # [37] "success_sputum_phone"                                                          
-  name = c("draw",
-            "cohort size", 
-           "Mean multiplier, time to TB recurrence",
-           "CV multiplier, time to TB recurrence",
-           "Cumulative 18-month notification multiplier",
-           "Proportion bacteriologically+ at diagnosis",
-           "Predictive accuracy for recurrence (AUC)",
-           "Mean log duration of reported symptoms",
-           "SD log of duration of reported symptoms",
-           "Underestimation of symptom duration",
-           "Increase in symptom duration, programmatic",
-           "Proportion with an asymptomatic bact+ period",
-           "Relative time asymptomatic vs symptomatic",
-           "Coefficient of variation in asymptomatic duration",
-           "Maximum proportion of cohort with subclinical TB at baseline",
-           "Minimum proportion of cohort with subclinical TB at 6 months",
-           "Maximum proportion of cohort with subclinical TB at 6 months",
-           "Coverage of phone-based screening",
-           "Reduction in coverage for home vs phone screening",
-           "Detection of symptoms if present, home-based screening",
-           "Reduction in symptom detection, phone vs home",
-           "Sample collection success rate",
-           "Reduction in sample collection success, phone vs home",
-           "Impact of home visit on passive detection",
-           "Effectiveness of care-seeking-promotion intervention",
-           "Cost of initial home visit",
-           "Cost of phone contact vs home visit",
-           "Cost of NAAT",
-           "Prevalence of non-TB symptoms",
-           "Cost of prevention intervention",
-           "case fatality",
-           "Cost of phone visit",
-           "Coveratge of home-based screening",
-           "Detection of symptoms if present, phone-based screening",
-           "NAAT completion rate, phone-based screening"
-           )
+param_names <- c(
+incidence_18mo_multiplier = "Cumulative 18-month notification uncertainty multiplier",
+proportion_micro_pos = "Proportion bacteriologically+ at diagnosis",
+# auc = "Predictive accuracy for recurrence (AUC)",
+symptom_duration_meanlog_reported = "Mean log duration of reported symptoms",
+symptom_duration_sdlog_reported = "SD log of duration of reported symptoms",
+reported_fraction_of_true_symptom_duration = "Underestimation of symptom duration",
+programmatic_symptom_duration_factor =            "Increase in symptom duration, programmatic",
+proportion_ever_subclinical = "Proportion with an asymptomatic bact+ period",
+duration_ratio_subclinical_symptomatic= "Relative time asymptomatic vs symptomatic",
+duration_subclinical_cv= "Coefficient of variation in asymptomatic duration",
+proportion_subclinical_sputumpos_at_eot = "Maximum proportion of cohort with subclinical TB at baseline",
+max_subclinical_fraction_of_presymptom_time = "Maximum proportion of presymptomatic time spent with TB", 
+subclinical_6m_amongcohort_min = "Minimum proportion of cohort with subclinical TB at 6 months",
+subclinical_6m_amongcohort_max = "Maximum proportion of cohort with subclinical TB at 6 months",
+coverage_phone =            "Coverage of phone-based screening",
+coverage_home_reduction= "Reduction in coverage for home vs phone screening",
+sensitivity_symptoms_home = "Detection of symptoms if present, home-based screening",
+sensitivity_symptoms_phone_reduction = "Reduction in symptom detection, phone vs home",
+success_sputum_home =           "Sample collection success rate (home)",
+success_sputum_phone_reduction = "Reduction in sample collection success, phone vs home",
+# home_visit_passive_detection_impact = "Impact of home visit on passive detection",
+# intentional_counseling_passive_detection_impact = "Effectiveness of care-seeking-promotion intervention",
+# intentional_counseling_passive_detection_duration = "Duration of effect, care-seeking-promotion intervention",
+# prevention_efficacy= "Effectiveness of prevention intervention",
+initial_contact_cost_home = "Cost of initial home visit",
+initial_contact_cost_home_vs_phone_factor = "Cost of phone contact vs home visit",
+sputum_test_cost = "Cost of NAAT",
+symptom_prevalence_nontb = "Prevalence of non-TB symptoms",
+# prevention_cost = "Cost of prevention intervention",
+# case_fatality = "case fatality",
+initial_contact_cost_phone = "Cost of phone visit",
+coverage_home = "Coverage of home-based screening",
+sensitivity_symptoms_phone = "Detection of symptoms if present, phone-based screening",
+success_sputum_phone= "NAAT completion rate, phone-based screening"
+# incidence_18mo
+# recurrence_shape
+# recurrence_scale
+# recurrence_time_mean
+# recurrence_time_cv
+# probability_dx540_given_recur
+# probability_ever_recur
+# median_dx_by_540_sim
+# p25_dx_by_540_sim
+# p75_dx_by_540_sim
+# prop_dx_le_90_among_dx540_sim
+# prop_dx_le_360_among_dx540_sim
+# target_median_dx
+# target_p25_dx
+# target_p75_dx
+# target_prop_dx_le_90
+# target_prop_dx_le_360
 )
            
-           
-           
+
            
 # sensitivty analysis
 # for each parameter in cohort_param_ranges, compare 
@@ -1145,25 +1151,35 @@ prcc_inf <- pcc(
   # nboot = 1000    # optional: bootstrap for CI
 )
 
+
+
 # Extract PRCC values into a dataframe
+
 prcc_results <- data.frame(
-  variable = param_names$name,
+  variable = rownames(prcc$PRCC),
   prcc = prcc$PRCC[,1],    # PRCC estimates
   prcc_inf = prcc_inf$PRCC[,1]    # PRCC estimates
   # lower = prcc$PRCC[,2],    # lower CI
   # upper = prcc$PRCC[,3]     # upper CI
 ) %>%
   
+  filter(variable %in% names(param_names)) %>% 
+
+  mutate(
+    nice_variable = recode(variable, !!!param_names),
+    nice_variable = stringr::str_wrap(nice_variable, width = 22),
+    ) %>% 
+  
   filter(abs(prcc)>0.05 | abs(prcc_inf)>0.05) %>%
   
-  pivot_longer(cols = c(prcc, prcc_inf), names_to = "type", values_to = "prcc") %>%
+  pivot_longer(cols = c(prcc, prcc_inf), names_to = "type", values_to = "prcc") %>% 
   mutate(Type = case_when(type=="prcc" ~ "Symptomatic", type=="prcc_inf" ~ "Infectious")) 
 
 ### Plot Tornado Diagram ----
 prcc_results <- prcc_results %>%
-  mutate(variable = reorder(variable, abs(prcc)))
+  mutate(nice_variable = reorder(nice_variable, abs(prcc)))
 
-tornado_A <- ggplot(prcc_results, aes(x = variable, y = prcc, fill = Type)) +
+tornado_A <- ggplot(prcc_results, aes(x = nice_variable, y = prcc, fill = Type)) +
   geom_bar(stat = "identity", position = "dodge") +
   # geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +
   coord_flip() +
@@ -1217,8 +1233,9 @@ prcc2_inf_sputum <- pcc(
 )
 
 # Extract PRCC values into a dataframe
+
 prcc2_results <- data.frame(
-  variable = param_names$name,
+  variable = rownames(prcc2$PRCC),
   prcc = prcc2$PRCC[,1],    # PRCC estimates
   prcc_inf = prcc2_inf$PRCC[,1],
   prcc_sputum = prcc2_sputum$PRCC[,1],
@@ -1226,6 +1243,13 @@ prcc2_results <- data.frame(
   # lower = prcc$PRCC[,2],    # lower CI
   # upper = prcc$PRCC[,3]     # upper CI
 ) %>%
+  
+  filter(variable %in% names(param_names)) %>% 
+  
+  mutate(
+    nice_variable = recode(variable, !!!param_names),
+    nice_variable = stringr::str_wrap(nice_variable, width = 22),
+  ) %>% 
   
   filter(abs(prcc)>0.1 | abs(prcc_inf)>0.1 | abs(prcc_sputum)>0.1 | abs(prcc_inf_sputum)>0.1) %>%
   pivot_longer(cols = c(prcc, prcc_inf, prcc_sputum, prcc_inf_sputum), 
@@ -1237,12 +1261,12 @@ prcc2_results <- data.frame(
          Intervention = case_when(sputum!="_sputum" ~ "Earlier screening (vs guidelines)", sputum=="_sputum" ~ "Adding 3m sputum (vs symptoms only)")) 
 
 prcc2_results <- prcc2_results %>%
-  mutate(variable = reorder(variable, abs(prcc))) %>%
+  mutate(nice_variable = reorder(nice_variable, abs(prcc))) %>%
   # change order of Intervention
   mutate(Intervention = factor(Intervention, levels = c("Earlier screening (vs guidelines)", "Adding 3m sputum (vs symptoms only)")))
 
 
-tornado_B <- ggplot(prcc2_results, aes(x = variable, y = prcc, fill = Type)) +
+tornado_B <- ggplot(prcc2_results, aes(x = nice_variable, y = prcc, fill = Type)) +
   facet_grid(. ~ Intervention) +
   geom_bar(stat = "identity", position = "dodge") +
   coord_flip() +
@@ -1270,23 +1294,23 @@ grid.arrange(tornado_A, tornado_B, ncol=1)
 dev.off()
 
 
-# compare deciles of a given parameter. 
-# parameter: 1/symptom_underestimation_factor
-# outcome: symptomatic_months_averted/symptomatic_months_soc
-# scenario: earlier_three_sputum
-# sim numbers considered:
-results$earlier_three_sputum %>% 
-  reframe(symptomatic_reduction = symptomatic_months_averted/symptomatic_months_soc*100) %>%
-  bind_cols(cohort_params) %>%
-  group_by(decile = ntile(1/symptom_underestimation_factor, 10)) %>%
-  summarize(median_reduction = median(symptomatic_reduction, na.rm=T),
-            lci_reduction = quantile(symptomatic_reduction, 0.025, na.rm=T),
-            uci_reduction = quantile(symptomatic_reduction, 0.975, na.rm=T))
-
+# # compare deciles of a given parameter. 
+# # parameter: 1/symptom_underestimation_factor
+# # outcome: symptomatic_months_averted/symptomatic_months_soc
+# # scenario: earlier_three_sputum
+# # sim numbers considered:
+# results$earlier_three_sputum %>% 
+#   reframe(symptomatic_reduction = symptomatic_months_averted/symptomatic_months_soc*100) %>%
+#   bind_cols(cohort_params) %>%
+#   group_by(decile = ntile(1/symptom_underestimation_factor, 10)) %>%
+#   summarize(median_reduction = median(symptomatic_reduction, na.rm=T),
+#             lci_reduction = quantile(symptomatic_reduction, 0.025, na.rm=T),
+#             uci_reduction = quantile(symptomatic_reduction, 0.975, na.rm=T))
+# 
 
 
 # Figure 2: Example screening plot for single cohort ----
-meanparams <- lapply(cohort_params, median)
+meanparams <- lapply(cohort_params[cohort_features$accepted_subclinical,], median)
 plotcohort <- create_cohort(cohort_params = meanparams)
 check_subclinical(plotcohort, cohort_params = meanparams)
 intervention_parameters <- list(

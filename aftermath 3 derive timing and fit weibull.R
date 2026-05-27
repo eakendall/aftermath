@@ -63,7 +63,8 @@ simulate_recurrence_course <- function(
     recurrence_scale,
     symptom_duration_meanlog_reported,
     symptom_duration_sdlog_reported,
-    reported_fraction_of_true_symptom_duration
+    reported_fraction_of_true_symptom_duration,
+    max_symptom_duration_fraction_of_onset_time
 ) {
   onset <- rweibull(
     n,
@@ -77,15 +78,27 @@ simulate_recurrence_course <- function(
     sdlog = symptom_duration_sdlog_reported
   )
   
-  true_symptom_duration <-
+  true_symptom_duration_raw <-
     reported_symptom_duration / reported_fraction_of_true_symptom_duration
+  
+  true_symptom_duration <-
+    pmin(
+      true_symptom_duration_raw,
+      max_symptom_duration_fraction_of_onset_time * onset
+    )
   
   diagnosis_time <- onset + true_symptom_duration
   
-  diagnosis_time
+  tibble(
+    onset = onset,
+    true_symptom_duration_raw = true_symptom_duration_raw,
+    true_symptom_duration = true_symptom_duration,
+    diagnosis_time = diagnosis_time
+  )
 }
 
-summarize_dx <- function(diagnosis_time, horizon = 540) {
+summarize_dx <- function(sim_data, horizon = 540) {
+  diagnosis_time <- sim_data$diagnosis_time
   dx540 <- diagnosis_time[diagnosis_time <= horizon]
   
   if (length(dx540) < 50) {
@@ -95,9 +108,16 @@ summarize_dx <- function(diagnosis_time, horizon = 540) {
       p75_dx_by_540 = NA_real_,
       prop_dx_le_90_among_dx540 = NA_real_,
       prop_dx_le_360_among_dx540 = NA_real_,
-      probability_dx540_given_recur = mean(diagnosis_time <= horizon)
+      probability_dx540_given_recur = mean(diagnosis_time <= horizon),
+      mean_symptom_duration_by_540 = NA_real_,
+      median_symptom_duration_by_540 = NA_real_,
+      mean_raw_symptom_duration_by_540 = NA_real_,
+      prop_onset_le_7_among_dx540 = NA_real_,
+      prop_onset_le_30_among_dx540 = NA_real_
     ))
   }
+  
+  dx540_index <- diagnosis_time <= horizon
   
   tibble(
     median_dx_by_540 = median(dx540),
@@ -105,7 +125,17 @@ summarize_dx <- function(diagnosis_time, horizon = 540) {
     p75_dx_by_540 = quantile(dx540, 0.75),
     prop_dx_le_90_among_dx540 = mean(dx540 <= 90),
     prop_dx_le_360_among_dx540 = mean(dx540 <= 360),
-    probability_dx540_given_recur = mean(diagnosis_time <= horizon)
+    probability_dx540_given_recur = mean(diagnosis_time <= horizon),
+    mean_symptom_duration_by_540 =
+      mean(sim_data$true_symptom_duration[dx540_index], na.rm = TRUE),
+    median_symptom_duration_by_540 =
+      median(sim_data$true_symptom_duration[dx540_index], na.rm = TRUE),
+    mean_raw_symptom_duration_by_540 =
+      mean(sim_data$true_symptom_duration_raw[dx540_index], na.rm = TRUE),
+    prop_onset_le_7_among_dx540 =
+      mean(sim_data$onset[dx540_index] <= 7, na.rm = TRUE),
+    prop_onset_le_30_among_dx540 =
+      mean(sim_data$onset[dx540_index] <= 30, na.rm = TRUE)
   )
 }
 
@@ -129,7 +159,8 @@ fit_one_draw <- function(draw_row, i, n_total) {
   message(
     "[", i, "/", n_total, "] draw=", draw_row$draw,
     " | fraction=", round(draw_row$reported_fraction_of_true_symptom_duration, 3),
-    " | sdlog=", round(draw_row$symptom_duration_sdlog_reported, 3)
+    " | sdlog=", round(draw_row$symptom_duration_sdlog_reported, 3),
+    " | max symptom frac=", round(draw_row$max_symptom_duration_fraction_of_onset_time, 2)
   )
   
   incidence_18mo <-
@@ -141,7 +172,7 @@ fit_one_draw <- function(draw_row, i, n_total) {
     shape <- exp(log_params[1])
     scale <- exp(log_params[2])
     
-    diagnosis_time <- simulate_recurrence_course(
+    sim_data <- simulate_recurrence_course(
       n = n_sim_fit,
       recurrence_shape = shape,
       recurrence_scale = scale,
@@ -150,11 +181,13 @@ fit_one_draw <- function(draw_row, i, n_total) {
       symptom_duration_sdlog_reported =
         draw_row$symptom_duration_sdlog_reported,
       reported_fraction_of_true_symptom_duration =
-        draw_row$reported_fraction_of_true_symptom_duration
+        draw_row$reported_fraction_of_true_symptom_duration,
+      max_symptom_duration_fraction_of_onset_time =
+        draw_row$max_symptom_duration_fraction_of_onset_time
     )
     
     sim_targets <- summarize_dx(
-      diagnosis_time,
+      sim_data,
       horizon = diagnosis_horizon_days
     )
     
@@ -201,7 +234,7 @@ fit_one_draw <- function(draw_row, i, n_total) {
   shape <- exp(fit$par[1])
   scale <- exp(fit$par[2])
   
-  diagnosis_time_final <- simulate_recurrence_course(
+  sim_data_final <- simulate_recurrence_course(
     n = n_sim_final,
     recurrence_shape = shape,
     recurrence_scale = scale,
@@ -210,11 +243,13 @@ fit_one_draw <- function(draw_row, i, n_total) {
     symptom_duration_sdlog_reported =
       draw_row$symptom_duration_sdlog_reported,
     reported_fraction_of_true_symptom_duration =
-      draw_row$reported_fraction_of_true_symptom_duration
+      draw_row$reported_fraction_of_true_symptom_duration,
+    max_symptom_duration_fraction_of_onset_time =
+      draw_row$max_symptom_duration_fraction_of_onset_time
   )
   
   final_targets <- summarize_dx(
-    diagnosis_time_final,
+    sim_data_final,
     horizon = diagnosis_horizon_days
   )
   
@@ -229,6 +264,7 @@ fit_one_draw <- function(draw_row, i, n_total) {
     " scale=", round(scale, 1),
     " P(dx<=540|recur)=", round(probability_dx540_given_recur, 3),
     " P(ever recur)=", round(probability_ever_recur, 3),
+    " mean sx dur(dx540)=", round(final_targets$mean_symptom_duration_by_540, 1),
     " obj=", round(fit$value, 1)
   )
   
@@ -253,6 +289,17 @@ fit_one_draw <- function(draw_row, i, n_total) {
       final_targets$prop_dx_le_90_among_dx540,
     prop_dx_le_360_among_dx540_sim =
       final_targets$prop_dx_le_360_among_dx540,
+    
+    mean_symptom_duration_by_540_sim =
+      final_targets$mean_symptom_duration_by_540,
+    median_symptom_duration_by_540_sim =
+      final_targets$median_symptom_duration_by_540,
+    mean_raw_symptom_duration_by_540_sim =
+      final_targets$mean_raw_symptom_duration_by_540,
+    prop_onset_le_7_among_dx540_sim =
+      final_targets$prop_onset_le_7_among_dx540,
+    prop_onset_le_30_among_dx540_sim =
+      final_targets$prop_onset_le_30_among_dx540,
     
     target_median_dx =
       observed_targets$target_median_dx,
