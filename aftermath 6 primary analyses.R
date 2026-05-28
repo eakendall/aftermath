@@ -1,3 +1,5 @@
+# Analyze outputs after running create_cohort and run_interventions
+
 #### Filtered and unfiltered results objects ####
 
 if (apply_subclinical_filter) 
@@ -14,6 +16,8 @@ if (apply_subclinical_filter)
     function(x) x[accepted_index, ]
   )
 }
+
+results_main <- results_filtered
 
 #### Quick checks - may be redundant ####
 
@@ -47,6 +51,17 @@ cohort_features %>%
   ylab("Subclinical NAAT+ prevalence at 6 months, among full cohort") +
   labs(color = "Accepted")
 
+
+### Check weibull fits and whether they are driving rejection
+ggplot(aes(abs(median_dx_by_540_sim - target_median_dx), accepted_subclinical))
+
+cor(
+  cohort_params$objective_value,
+  cohort_features$accepted_subclinical
+)
+
+# And check distribution of objective values (if tehre's a long tail, should add something to reject that)
+hist(cohort_params$objective_value, breaks=50)
 
 #### Evaluate cohort characteristics and natural history results ####
 
@@ -300,8 +315,6 @@ plotdata %>% filter(outcome == "detectedlinked") %>% summarise(quantile(proporti
 plotdata %>% filter(outcome == "averted") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
 
 #### Look at intervention results ####
-
-results_main <- results_filtered
 
 cbind(
   lapply(results_main, function(x)
@@ -622,18 +635,18 @@ dev.off()
 # calculate icer of 4 screens vs 3 , and of three + sputum vs 3
 # but don't use plotdata (which is proportions), instead use raw results
 # 4 screens vs 3 screens:
-icer_4vs3_detections <- (results$four_visits_36912$cost - results$earlier_three$cost) / 
-  (results$four_visits_36912$detections - results$earlier_three$detections)
-icer_4vs3_symptomatic <- (results$four_visits_36912$cost - results$earlier_three$cost) / 
-  (results$four_visits_36912$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)
-icer_4vs3_infectious <- pmax(results$four_visits_36912$cost - results$earlier_three$cost, 0) / 
-  pmax(results$four_visits_36912$infectious_months_averted - results$earlier_three$infectious_months_averted, 0)
-icer_sputum_detections <- (results$earlier_three_sputum$cost - results$earlier_three$cost) / 
-  (results$earlier_three_sputum$detections - results$earlier_three$detections)
-icer_sputum_symptomatic <- (results$earlier_three_sputum$cost - results$earlier_three$cost) / 
-  (results$earlier_three_sputum$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)
-icer_sputum_infectious <- (results$earlier_three_sputum$cost - results$earlier_three$cost) / 
-  (results$earlier_three_sputum$infectious_months_averted - results$earlier_three$infectious_months_averted)
+icer_4vs3_detections <- (results_main$four_visits_36912$cost - results_main$earlier_three$cost) / 
+  (results_main$four_visits_36912$detections - results_main$earlier_three$detections)
+icer_4vs3_symptomatic <- (results_main$four_visits_36912$cost - results_main$earlier_three$cost) / 
+  (results_main$four_visits_36912$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)
+icer_4vs3_infectious <- pmax(results_main$four_visits_36912$cost - results_main$earlier_three$cost, 0) / 
+  pmax(results_main$four_visits_36912$infectious_months_averted - results_main$earlier_three$infectious_months_averted, 0)
+icer_sputum_detections <- (results_main$earlier_three_sputum$cost - results_main$earlier_three$cost) / 
+  (results_main$earlier_three_sputum$detections - results_main$earlier_three$detections)
+icer_sputum_symptomatic <- (results_main$earlier_three_sputum$cost - results_main$earlier_three$cost) / 
+  (results_main$earlier_three_sputum$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)
+icer_sputum_infectious <- (results_main$earlier_three_sputum$cost - results_main$earlier_three$cost) / 
+  (results_main$earlier_three_sputum$infectious_months_averted - results_main$earlier_three$infectious_months_averted)
 
 
 median(icer_4vs3_detections, na.rm=T)
@@ -653,15 +666,15 @@ quantile(icer_sputum_infectious, c(0.025, 0.975), na.rm=T)
 
 # to calculate from results:
 #"compared to screening with symptoms at 3, 6, and 9 months after treatment completion, adding a fourth screening visit costs $x more per person, incrementally detects x% of all recurrences, and incrementally averts x% of the time with symptomatic TB and x% of the time with infectious TB that the cohort would have experienced in absence of any screening."
-quantile((results$four_visits_36912$cost - results$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$four_visits_36912$detections - results$earlier_three$detections)/results$four_visits_36912$recurrences, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$four_visits_36912$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)/results$four_visits_36912$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$four_visits_36912$infectious_months_averted - results$earlier_three$infectious_months_averted)/results$four_visits_36912$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$four_visits_36912$cost - results_main$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$four_visits_36912$detections - results_main$earlier_three$detections)/results_main$four_visits_36912$recurrences, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$four_visits_36912$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)/results_main$four_visits_36912$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$four_visits_36912$infectious_months_averted - results_main$earlier_three$infectious_months_averted)/results_main$four_visits_36912$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
 
-quantile((results$earlier_three_sputum$cost - results$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$earlier_three_sputum$detections - results$earlier_three$detections)/results$earlier_three_sputum$recurrences, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$earlier_three_sputum$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)/results$earlier_three_sputum$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$earlier_three_sputum$infectious_months_averted - results$earlier_three$infectious_months_averted)/results$earlier_three_sputum$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$earlier_three_sputum$cost - results_main$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$earlier_three_sputum$detections - results_main$earlier_three$detections)/results_main$earlier_three_sputum$recurrences, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$earlier_three_sputum$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)/results_main$earlier_three_sputum$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$earlier_three_sputum$infectious_months_averted - results_main$earlier_three$infectious_months_averted)/results_main$earlier_three_sputum$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
 
 
 # create a data frame of nice names for all the paramters
@@ -673,7 +686,8 @@ param_names <- c(
   symptom_duration_sdlog_reported = "SD log of duration of reported symptoms",
   reported_fraction_of_true_symptom_duration = "Underestimation of symptom duration",
   programmatic_symptom_duration_factor = "Increase in symptom duration under programmatic conditions",
-  proportion_ever_subclinical = "Proportion with an asymptomatic bact+ period",
+  proportion_micropos_sputum_first = "Proportion of micropositive recurrences with NAAT+ before symptoms",
+  proportion_micropos_subclinical_at_eot = "Proportion of micropositive recurrences NAAT+ at treatment completion",  
   duration_ratio_subclinical_symptomatic= "Relative time asymptomatic vs symptomatic",
   duration_subclinical_cv= "Coefficient of variation in asymptomatic duration",
   subclinical_baseline_amongTB_max = "Maximum proportion with subclinical TB at treatment completion",
@@ -730,20 +744,20 @@ param_names <- c(
 # guidelines vs soc:
 sxarray <- cbind(results$guidelines %>% 
                    reframe(sx_reduction = symptomatic_months_averted/symptomatic_months_soc*100, ), 
-                 as.data.frame(cohort_params))[!is.na(results$guidelines$symptomatic_months_averted),]
+                 as.data.frame(cohort_params))[!is.na(results_main$guidelines$symptomatic_months_averted),]
 
 prcc <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results$guidelines$symptomatic_months_averted),]),
-  y = (results$guidelines %>% 
-         reframe(sx_reduction = symptomatic_months_averted/symptomatic_months_soc*100, ))[!is.na(results$guidelines$symptomatic_months_averted),],
+  X = as.data.frame((as.matrix(cohort_params))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
+  y = (results_main$guidelines %>% 
+         reframe(sx_reduction = symptomatic_months_averted/symptomatic_months_soc*100, ))[!is.na(results_main$guidelines$symptomatic_months_averted),],
   rank = TRUE    # Spearman rank correlation (PRCC)
   # nboot = 1000    # optional: bootstrap for CI
 )
 
 prcc_inf <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results$guidelines$symptomatic_months_averted),]),
-  y = (results$guidelines %>% 
-         reframe(sx_reduction = infectious_months_averted/infectious_months_soc*100, ))[!is.na(results$guidelines$symptomatic_months_averted),],
+  X = as.data.frame((as.matrix(cohort_params))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
+  y = (results_main$guidelines %>% 
+         reframe(sx_reduction = infectious_months_averted/infectious_months_soc*100, ))[!is.na(results_main$guidelines$symptomatic_months_averted),],
   rank = TRUE    # Spearman rank correlation (PRCC)
   # nboot = 1000    # optional: bootstrap for CI
 )
@@ -908,7 +922,9 @@ dev.off()
 
 # Figure 2: Example screening plot for single cohort ----
 
-meanparams <- lapply(cohort_params[cohort_features$accepted_subclinical == 1,], median)
+meanparams <- cohort_params[cohort_features$accepted_subclinical == 1, ] %>%
+  summarise(across(where(is.numeric), median, na.rm = TRUE)) %>%
+  as.list()
 plotcohort <- create_cohort(cohort_params = meanparams)
 check_subclinical(plotcohort, cohort_params = meanparams)
 intervention_parameters <- list(

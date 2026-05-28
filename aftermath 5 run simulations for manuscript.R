@@ -19,7 +19,7 @@ run_interventions <- TRUE
 apply_subclinical_filter <- FALSE
 
 # Start conservative for memory; increase if stable
-plan(multisession, workers = 6)
+plan(multisession, workers = 2)
 
 script_start_time <- Sys.time()
 
@@ -149,7 +149,8 @@ run_one_cohort_feature <- function(n) {
   cohort <- create_cohort(cohort_params[n, ])
   
   subclinical_baseline_among_micropos <-
-    mean(cohort$sputum_onset <= 0, na.rm = TRUE)
+    sum(cohort$subclinical_at_eot == 1, na.rm = TRUE) /
+    sum(cohort$pulmonary_with_micro == 1, na.rm = TRUE)
   
   subclinical_6mo_amongcohort <-
     sum(cohort$sputum_onset < 180 & cohort$symptom_onset >= 180,
@@ -258,7 +259,17 @@ run_one_cohort_feature <- function(n) {
       sum(cohort$TB == 1, na.rm = TRUE) / N_cohort,
     
     median_time_to_onset = median(cohort$symptom_onset, na.rm = TRUE),
+    median_time_to_first_event = median(cohort$first_event_time, na.rm = TRUE),
     median_time_to_diagnosis = median(cohort$diagnosis_routine, na.rm = TRUE),
+    
+    proportion_sputum_first =
+      sum(cohort$sputum_first == 1, na.rm = TRUE) /
+      sum(cohort$pulmonary_with_micro == 1, na.rm = TRUE),
+    
+    proportion_subclinical_at_eot =
+      sum(cohort$subclinical_at_eot == 1, na.rm = TRUE) /
+      sum(cohort$pulmonary_with_micro == 1, na.rm = TRUE),
+    
     mean_symptom_duration = mean(cohort$diagnosis_routine - cohort$symptom_onset, na.rm = TRUE),
     sd_symptom_duration = sd(cohort$diagnosis_routine - cohort$symptom_onset, na.rm = TRUE),
     proportion_micro_pos =
@@ -419,6 +430,18 @@ if (run_cohort_features) {
   saveRDS(cohort_features, file = paste0("outputs/cohort_features_", date, ".rds"))
   saveRDS(cascade_features, file = paste0("outputs/cascade_features_", date, ".rds"))
 }
+
+# cohort features diagnostic: 
+
+cohort_features %>%
+  summarise(
+    accepted = mean(accepted_subclinical),
+    median_sputum_first = median(proportion_sputum_first, na.rm = TRUE),
+    median_subclinical_at_eot = median(proportion_subclinical_at_eot, na.rm = TRUE),
+    median_first_event = median(median_time_to_first_event, na.rm = TRUE),
+    median_symptom_onset = median(median_time_to_onset, na.rm = TRUE),
+    median_6mo_subclinical = median(subclinical_6mo_amongcohort, na.rm = TRUE)
+  )
 
 #### Helper: one intervention set ####
 

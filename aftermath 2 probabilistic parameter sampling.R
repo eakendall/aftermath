@@ -8,7 +8,7 @@ conflicts_prefer(dplyr::summarize)
 N_cohort <- 10000
 N_samples <- 500 # changed temporarily from 5000
 
-date <- "20260528"
+date <- "20260528_first_event_model"
 
 set.seed(12345)
 
@@ -17,35 +17,46 @@ set.seed(12345)
 fixed_empirical_inputs <- readRDS("outputs/fixed_empirical_inputs.rds")
 
 #### Parameter ranges ####
-# Parameters that depend on true symptom duration / symptom onset timing are NOT
-# estimated here. Instead, draw uncertainty multipliers to apply downstream.
 
 cohort_param_ranges <- list(
   N = N_cohort,
   
   #### Empirical / semi-empirical parameters ####
-  incidence_18mo_multiplier = c(0.8, 1.2), # now refers to incidence of diagnosis by 540d not onset. Wider uncertainty than estimated from aftermath directly, but that's appropriate because of simplifications in weibull fitting.
+  incidence_18mo_multiplier = c(0.8, 1.2),
   proportion_micro_pos = c(0.42, 0.64),
-  # binom.agresti.coull(fixed_empirical_inputs$micropos_n, fixed_empirical_inputs$recurrence_n)
-  auc = 0.69, #c(0.56, 0.77), # not using for manuscript
+  auc = 0.69,
   
   #### Reported symptom duration distribution ####
   symptom_duration_meanlog_reported = 2.76,
-  # fixed_empirical_inputs$reported_symptom_duration_recurrence$meanlog
   symptom_duration_sdlog_reported = c(0.6, 0.8),
-  # fixed_empirical_inputs$reported_symptom_duration_recurrence$sdlog
   
-  ####Symptom_underestimation_factor ####
+  #### Symptom duration scaling ####
   # Reported duration is this fraction of true duration.
   # true_duration = reported_duration / reported_fraction_of_true_symptom_duration
   reported_fraction_of_true_symptom_duration = c(1/6, 1/2),
   programmatic_symptom_duration_factor = c(1, 2),
   
-  #### Subclinical natural history ####
-  proportion_ever_subclinical = c(0.6, 0.9),
+  #### Natural history: first detectable recurrent-TB state ####
+  # A small proportion of micropositive recurrent TB is already NAAT+/sputum+ at treatment completion.
+  # This will be assigned explicitly in create_cohort(), rather than arising from pmax().
+  proportion_micropos_subclinical_at_eot = c(0.00, 0.10),
+  
+  # Among micropositive recurrent TB episodes, probability that the first detectable state
+  # is sputum+/NAAT+ before symptom-screen positivity.
+  proportion_micropos_sputum_first = c(0.60, 0.80),
+  
+  # Among sputum-first episodes, duration from sputum+/NAAT+ onset to symptom onset.
+  # Mean is set relative to mean true symptomatic duration downstream.
   duration_ratio_subclinical_symptomatic = c(0.8, 1.2),
   duration_subclinical_cv = c(0.5, 1.5),
+  
+  #### Subclinical prevalence calibration criteria ####
+  # Baseline: maximum proportion of micropositive recurrent TB already NAAT+/sputum+
+  # at treatment completion.
   subclinical_baseline_amongTB_max = 0.20,
+  
+  # Six-month: symptom-negative, NAAT+/sputum+ recurrent TB prevalence
+  # among the full post-TB cohort.
   subclinical_6m_amongcohort_min = 0.004,
   subclinical_6m_amongcohort_max = 0.017,
   
@@ -54,8 +65,7 @@ cohort_param_ranges <- list(
   coverage_home_reduction = c(0.75, 0.95),
   sensitivity_symptoms_home = c(0.7, 0.9),
   sensitivity_symptoms_phone_reduction = c(0.6, 0.82),
-  # fixed_empirical_inputs$relative_symptom_reporting_phone
-  success_sputum_home = c(0.9, 1.0), # assuming can swab tongue if participating
+  success_sputum_home = c(0.9, 1.0),
   success_sputum_phone_reduction = c(0.6, 1.0),
   
   home_visit_passive_detection_impact = 1,

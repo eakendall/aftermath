@@ -123,7 +123,12 @@ exclude_parameters <- c(
   "probability_dx540_given_recur", "probability_ever_recur", "prevention_cost",
   "objective_value",
   "mean_symptom_duration_by_540_sim", "median_symptom_duration_by_540_sim", 
-  "prop_onset_le_7_among_dx540_sim",  "prop_onset_le_30_among_dx540_sim"
+  "prop_first_event_le_7_among_dx540_sim",
+  "prop_first_event_le_30_among_dx540_sim",
+  "prop_symptom_onset_le_7_among_dx540_sim",
+  "prop_symptom_onset_le_30_among_dx540_sim",
+  "prop_sputum_first_by_540_sim",
+  "mean_subclinical_duration_by_540_sim"
 )
 
 sampled_parameters <- setdiff(sampled_parameters, exclude_parameters)
@@ -135,7 +140,8 @@ nice_names <- c(
   symptom_duration_sdlog_reported = "SD log reported symptom duration",
   reported_fraction_of_true_symptom_duration = "Reported fraction of true symptom duration",
   programmatic_symptom_duration_factor = "Increase in symptom duration under programmatic conditions",
-  proportion_ever_subclinical = "Proportion with asymptomatic  NAAT+ period",
+  proportion_micropos_sputum_first = "Proportion of micropositive recurrences with NAAT+ before symptoms",
+    proportion_micropos_subclinical_at_eot = "Proportion of micropositive recurrences NAAT+ at treatment completion",
   duration_ratio_subclinical_symptomatic = "Asymptomatic:symptomatic NAAT+ time ratio",
   duration_subclinical_cv = "Coefficient of variation, asymptomatic TB duration",
   subclinical_baseline_amongTB_max = "Maximum subclinical prevalence at treatment completion",
@@ -157,7 +163,10 @@ key_outcomes <- c(
   "prev_subclinical_6mo",
   "cum_months_sx_24mo",
   "cum_months_inf_24mo",
-  "cum_months_subclinical_24mo"
+  "cum_months_subclinical_24mo",
+  "proportion_sputum_first",
+  "proportion_subclinical_at_eot",
+  "median_time_to_first_event"
 )
 
 accepted_status <- tibble(
@@ -250,28 +259,28 @@ prcc_outcomes <- tibble(
   sim_id = seq_len(nrow(cohort_params)),
   
   guidelines_sx_reduction =
-    results$guidelines$symptomatic_months_averted /
-    results$guidelines$symptomatic_months_soc * 100,
+    results_main$guidelines$symptomatic_months_averted /
+    results_main$guidelines$symptomatic_months_soc * 100,
   
   guidelines_inf_reduction =
-    results$guidelines$infectious_months_averted /
-    results$guidelines$infectious_months_soc * 100,
+    results_main$guidelines$infectious_months_averted /
+    results_main$guidelines$infectious_months_soc * 100,
   
   earlier_three_vs_guidelines_sx =
-    results$earlier_three$symptomatic_months_averted /
-    results$guidelines$symptomatic_months_averted,
+    results_main$earlier_three$symptomatic_months_averted /
+    results_main$guidelines$symptomatic_months_averted,
   
   earlier_three_vs_guidelines_inf =
-    results$earlier_three$infectious_months_averted /
-    results$guidelines$infectious_months_averted,
+    results_main$earlier_three$infectious_months_averted /
+    results_main$guidelines$infectious_months_averted,
   
   earlier_three_sputum_vs_guidelines_sx =
-    results$earlier_three_sputum$symptomatic_months_averted /
-    results$guidelines$symptomatic_months_averted,
+    results_main$earlier_three_sputum$symptomatic_months_averted /
+    results_main$guidelines$symptomatic_months_averted,
   
   earlier_three_sputum_vs_guidelines_inf =
-    results$earlier_three_sputum$infectious_months_averted /
-    results$guidelines$infectious_months_averted
+    results_main$earlier_three_sputum$infectious_months_averted /
+    results_main$guidelines$infectious_months_averted
 )
 
 outcome_nice_names <- c(
@@ -406,6 +415,7 @@ ggsave(
   height = 10
 )
 
+if (!is.null(results_unfiltered)) {
 #### Compare intervention outputs with vs without subclinical calibration filter ####
 
 key_interventions <- c(
@@ -508,3 +518,4 @@ ggsave(
   width = 13,
   height = 9
 )
+}
