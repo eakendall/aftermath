@@ -6,7 +6,9 @@ library(conflicted)
 conflicts_prefer(dplyr::summarize)
 
 N_cohort <- 10000
-N_samples <- 5000
+N_samples <- 500 # changed temporarily from 5000
+
+date <- "20260528"
 
 set.seed(12345)
 
@@ -36,7 +38,8 @@ cohort_param_ranges <- list(
   ####Symptom_underestimation_factor ####
   # Reported duration is this fraction of true duration.
   # true_duration = reported_duration / reported_fraction_of_true_symptom_duration
-  reported_fraction_of_true_symptom_duration = c(1/8, 1/2),
+  reported_fraction_of_true_symptom_duration = c(1/6, 1/2),
+  programmatic_symptom_duration_factor = c(1, 2),
   
   #### Subclinical natural history ####
   proportion_ever_subclinical = c(0.6, 0.9),
@@ -113,10 +116,18 @@ dir.create("outputs", showWarnings = FALSE)
 
 write_csv(
   cohort_params,
-  "outputs/probabilistic_parameter_draws_pre_weibull.csv"
+  paste0(
+    "outputs/probabilistic_parameter_draws_pre_weibull_",
+    date,
+    ".csv"
+  )
 )
 
 saveRDS(
   cohort_params,
-  "outputs/probabilistic_parameter_draws_pre_weibull.rds"
+  paste0(
+    "outputs/probabilistic_parameter_draws_pre_weibull_",
+    date,
+    ".rds"
+  )
 )

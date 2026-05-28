@@ -2,6 +2,10 @@
 
 library(tidyverse)
 library(conflicted)
+library(future)
+library(future.apply)
+
+plan(multisession, workers = 6)
 
 conflicts_prefer(dplyr::select, dplyr::filter, dplyr::summarize)
 
@@ -12,8 +16,8 @@ set.seed(12345)
 test_mode <- FALSE
 n_test_draws <- 10
 
-n_sim_fit <- 10000
-n_sim_final <- 50000
+n_sim_fit <- 3000
+n_sim_final <- 20000
 
 diagnosis_horizon_days <- 540
 
@@ -22,7 +26,13 @@ diagnosis_horizon_days <- 540
 fixed_empirical_inputs <- readRDS("outputs/fixed_empirical_inputs.rds")
 data <- fixed_empirical_inputs$data
 
-cohort_params <- readRDS("outputs/probabilistic_parameter_draws_pre_weibull.rds")
+cohort_params <- readRDS(
+  paste0(
+    "outputs/probabilistic_parameter_draws_pre_weibull_",
+    date,
+    ".rds"
+  )
+)
 
 if (test_mode) {
   cohort_params <- cohort_params %>% slice(1:n_test_draws)
@@ -63,7 +73,8 @@ simulate_recurrence_course <- function(
     recurrence_scale,
     symptom_duration_meanlog_reported,
     symptom_duration_sdlog_reported,
-    reported_fraction_of_true_symptom_duration
+    reported_fraction_of_true_symptom_duration,
+    programmatic_symptom_duration_factor
 ) {
   onset <- rweibull(
     n,
@@ -78,7 +89,9 @@ simulate_recurrence_course <- function(
   )
   
   true_symptom_duration <-
-    reported_symptom_duration / reported_fraction_of_true_symptom_duration
+    reported_symptom_duration /
+    reported_fraction_of_true_symptom_duration *
+    programmatic_symptom_duration_factor
   
   diagnosis_time <- onset + true_symptom_duration
   
@@ -148,7 +161,8 @@ fit_one_draw <- function(draw_row, i, n_total) {
   message(
     "[", i, "/", n_total, "] draw=", draw_row$draw,
     " | fraction=", round(draw_row$reported_fraction_of_true_symptom_duration, 3),
-    " | sdlog=", round(draw_row$symptom_duration_sdlog_reported, 3)
+    " | sdlog=", round(draw_row$symptom_duration_sdlog_reported, 3),
+    " | prog factor=", round(draw_row$programmatic_symptom_duration_factor, 2)
   )
   
   incidence_18mo <-
@@ -169,7 +183,9 @@ fit_one_draw <- function(draw_row, i, n_total) {
       symptom_duration_sdlog_reported =
         draw_row$symptom_duration_sdlog_reported,
       reported_fraction_of_true_symptom_duration =
-        draw_row$reported_fraction_of_true_symptom_duration
+        draw_row$reported_fraction_of_true_symptom_duration,
+      programmatic_symptom_duration_factor =
+        draw_row$programmatic_symptom_duration_factor
     )
     
     sim_targets <- summarize_dx(
@@ -229,7 +245,9 @@ fit_one_draw <- function(draw_row, i, n_total) {
     symptom_duration_sdlog_reported =
       draw_row$symptom_duration_sdlog_reported,
     reported_fraction_of_true_symptom_duration =
-      draw_row$reported_fraction_of_true_symptom_duration
+      draw_row$reported_fraction_of_true_symptom_duration,
+    programmatic_symptom_duration_factor =
+      draw_row$programmatic_symptom_duration_factor
   )
   
   final_targets <- summarize_dx(
@@ -308,7 +326,7 @@ fit_one_draw <- function(draw_row, i, n_total) {
 
 n_total <- nrow(cohort_params)
 
-cohort_params_final <- map_dfr(
+fit_results <- future_lapply(
   seq_len(n_total),
   function(i) {
     draw_row <- cohort_params %>% slice(i)
@@ -321,24 +339,34 @@ cohort_params_final <- map_dfr(
         n_total = n_total
       )
     )
-  }
+  },
+  future.seed = TRUE
 )
+
+cohort_params_final <- bind_rows(fit_results)
+
+rm(fit_results)
+invisible(gc(full = TRUE))
 
 #### Save outputs ####
 
 write_csv(
   cohort_params_final,
-  "outputs/cohort_params_final.csv"
+  paste0("outputs/cohort_params_final_", date, ".csv")
 )
 
 saveRDS(
   cohort_params_final,
-  "outputs/cohort_params_final.rds"
+  paste0("outputs/cohort_params_final_", date, ".rds")
 )
 
 write_csv(
   observed_targets,
-  "outputs/observed_diagnosis_timing_targets.csv"
+  paste0("outputs/observed_diagnosis_timing_targets_", date, ".csv")
 )
 
-message("Done. Saved outputs/cohort_params_final.rds and .csv.")
+message(
+  "Done. Saved outputs/cohort_params_final_",
+  date,
+  ".rds and .csv."
+)

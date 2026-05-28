@@ -18,7 +18,7 @@ create_cohort <- function(cohort_params)
     scale <- recurrence_scale
     shape <- recurrence_shape
     
-    # total events (micro+ symptom onset)
+    # total events (symptom onset)
     cohort$TB <- rbinom(
       n = N,
       size = 1,
@@ -45,6 +45,7 @@ create_cohort <- function(cohort_params)
           TB == 1 ~
             1 / reported_fraction_of_true_symptom_duration /
             home_visit_passive_detection_impact *
+            programmatic_symptom_duration_factor *
             rlnorm(
               n = n(),
               meanlog = symptom_duration_meanlog_reported,
@@ -68,7 +69,8 @@ create_cohort <- function(cohort_params)
     
     true_symptom_duration_mean <-
       symptom_duration_mean_reported /
-      reported_fraction_of_true_symptom_duration
+      reported_fraction_of_true_symptom_duration *
+      programmatic_symptom_duration_factor
     
     mean_sputumpos_symptomatic_duration_among_micropos <-
       true_symptom_duration_mean *
@@ -133,6 +135,7 @@ create_cohort <- function(cohort_params)
          sputum_onset_original = sputum_onset
        )
     
+  
     #### Prediction ####
     
       roc.curve <- simulate_auc(auc = auc)

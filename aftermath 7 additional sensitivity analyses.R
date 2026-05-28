@@ -58,18 +58,6 @@ cuminc_fit <- cuminc(Surv(time, as.factor(event)) ~ 1, data = survival_dataset_t
     scale_ggsurvfit())
 
 
-dataplotbase + stat_ecdf(data = 
-                           data.frame(tb = rbinom(100000, size = 1, prob = 0.11)) %>%
-                           mutate(symptom_onset = case_when(tb==1 ~ rweibull(n=n(), scale = 406, shape=0.75),
-                                                            TRUE ~ 10000),
-                                  diagnosis_routine = symptom_onset + 
-                                    rlnorm(n=n(), meanlog = 2.69, sdlog = 0.68)*2), # * (symptom_onset/184)^0.25), 
-                         aes(x = diagnosis_routine), col = "blue") + coord_cartesian(xlim = c(0,30*24), ylim=c(0,0.12)) + 
-  scale_x_continuous(breaks = seq(0, 24*30, by = 3*30), labels = seq(0, 24, by = 3)) + 
-  xlab("Months since treatment completion") + 
-  ylab("Cumulative notifications of recurrent TB") 
-
-
 # overlay simulated timing
 # For each set of cohort_params, simulate a cohort and plot the distribution of diagnosis_routing
 set.seed(12345)
@@ -81,7 +69,7 @@ for (n in 1: min(500, nrow(cohort_params))) {
   
   if(check_subclinical(cohort, params)) 
   {
-    cohort$diagnosis_routine[is.na(cohort$diagnosis_routine)] <- 10000
+    cohort$diagnosis_routine[is.na(cohort$diagnosis_routine)] <- 10000 # set to beyond plot's x axis limit if no recurrence, so this will be cumulative % across full cohort not just recurrences
     
     # plot cumulative distribution of diagnosis_routine 
     dataplot <- dataplot + 
@@ -95,7 +83,8 @@ dataplot + coord_cartesian(xlim = c(0,30*18), ylim=c(0,0.12)) +
   ylab("Cumulative notifications of recurrent TB") 
 
 
-# Compare timing of clinical and micro diagnoses:
+#### Compare timing of clinical and micro diagnoses: ####
+
 ggplot(data %>% filter(end_reason == "TB recurrence"), 
        aes(x = txcompl_endreason_days/30, color = as.factor(micropos))) +
   stat_ecdf() +
@@ -145,11 +134,11 @@ nice_names <- c(
   proportion_micro_pos = "Proportion NAAT-positive at diagnosis",
   symptom_duration_sdlog_reported = "SD log reported symptom duration",
   reported_fraction_of_true_symptom_duration = "Reported fraction of true symptom duration",
+  programmatic_symptom_duration_factor = "Increase in symptom duration under programmatic conditions",
   proportion_ever_subclinical = "Proportion with asymptomatic  NAAT+ period",
   duration_ratio_subclinical_symptomatic = "Asymptomatic:symptomatic NAAT+ time ratio",
   duration_subclinical_cv = "Coefficient of variation, asymptomatic TB duration",
-  subclinical_baseline_amongTB_max =
-    "Maximum subclinical prevalence at treatment completion",
+  subclinical_baseline_amongTB_max = "Maximum subclinical prevalence at treatment completion",
   subclinical_6m_amongcohort_min = "Minimum 6-month asymptomatic TB prevalence",
   subclinical_6m_amongcohort_max = "Maximum 6-month asymptomatic TB prevalence",
   median_dx_by_540_sim= "Median days to diagnosis (if diagnosed by 18mo)",
@@ -157,7 +146,8 @@ nice_names <- c(
   p75_dx_by_540_sim = "75th quantile, days to diagnosis (if diagnosed by 18mo)",
   prop_dx_le_90_among_dx540_sim = "Proportion diagnosed by day 90 (if diagnosed by 18mo)",
   prop_dx_le_360_among_dx540_sim = "Proportion diagnosed by day 360 (if diagnosed by 18mo)"
-  
+  # subclinical_baseline_among_micropos =   "Baseline subclinical prevalence among micropositive recurrences",
+  # subclinical_6mo_amongcohort = "6-month subclinical prevalence"
 )
 
 key_outcomes <- c(
@@ -461,8 +451,8 @@ prep_results_for_filter_comparison <- function(results_obj, filter_label) {
 }
 
 filter_compare_data <- bind_rows(
-  prep_results_for_filter_comparison(results_no_subclinical_filter, "All simulations"),
-  prep_results_for_filter_comparison(results, "Retained simulations")
+  prep_results_for_filter_comparison(results_unfiltered, "All simulations"),
+  prep_results_for_filter_comparison(results_filtered, "Retained simulations")
 ) %>%
   filter(intervention %in% key_interventions) %>%
   select(
