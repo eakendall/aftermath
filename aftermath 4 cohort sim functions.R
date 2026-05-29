@@ -105,6 +105,12 @@ create_cohort <- function(cohort_params)
           TRUE ~ 0
         ),
         
+        cohort$first_event_time <- ifelse(
+          cohort$subclinical_at_eot == 1,
+          0,
+          cohort$first_event_time
+        )
+        
         subclinical_duration = case_when(
           pulmonary_with_micro == 1 & sputum_first == 1 ~
             base_mean_duration_subclinical *
@@ -235,8 +241,6 @@ check_subclinical <- function(cohort, cohort_params)
     ) / nrow(cohort)
   
   if (
-    subclinical_baseline_amongTB <
-    cohort_params$subclinical_baseline_amongTB_max &
     subclinical_6mo_amongcohort >
     cohort_params$subclinical_6m_amongcohort_min &
     subclinical_6mo_amongcohort <

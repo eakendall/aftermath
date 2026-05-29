@@ -2,42 +2,50 @@
 
 #### Filtered and unfiltered results objects ####
 
-if (apply_subclinical_filter) 
-{
-  results_filtered <- results
-  results_unfiltered <- NULL
-  } else{
-  results_unfiltered <- results
+valid_index <- cohort_params$valid_weibull_numeric
+
+results_unfiltered <- results
+
+if (apply_subclinical_filter) {
   
-  accepted_index <- cohort_features$accepted_subclinical == 1
+  keep_index <- valid_index
   
-  results_filtered <- lapply(
-    results_unfiltered,
-    function(x) x[accepted_index, ]
-  )
+} else {
+  
+  keep_index <- cohort_features$accepted_subclinical == 1 &
+    valid_index
+  
 }
 
+results_filtered <- lapply(
+  results_unfiltered,
+  function(x) x[keep_index, ]
+)
+
 results_main <- results_filtered
+cohort_params_main <- cohort_params[keep_index, ]
+cohort_features_main <- cohort_features[keep_index, ]
 
 #### Quick checks - may be redundant ####
 
 mean(cohort_features$accepted_subclinical)
+mean(accepted_index)
+mean(valid_index)
+mean(accepted_index & valid_index)
+cohort_features$valid_weibull_numeric <- cohort_params$valid_weibull_numeric
+cohort_features$weibull_objective <- cohort_params$weibull_objective
 
 cohort_features %>%
-  count(fails_baseline_high, fails_6mo_low, fails_6mo_high) %>%
+  count(fails_6mo_low, fails_6mo_high, accepted_subclinical, valid_weibull_numeric) %>%
   mutate(prop = n / sum(n))
 
 cohort_features %>%
   ggplot(aes(
-    x = subclinical_baseline_among_micropos,
+    x = weibull_objective,
     y = subclinical_6mo_amongcohort,
-    color = factor(accepted_subclinical)
+    color = factor(keep_index)
   )) +
   geom_point(alpha = 0.5) +
-  geom_vline(
-    xintercept = cohort_params$subclinical_baseline_amongTB_max[1],
-    linetype = "dashed"
-  ) +
   geom_hline(
     yintercept = cohort_params$subclinical_6m_amongcohort_min[1],
     linetype = "dashed"
@@ -47,14 +55,12 @@ cohort_features %>%
     linetype = "dashed"
   ) +
   theme_minimal() +
-  xlab("Subclinical NAAT+ at treatment completion, among micropositive recurrences") +
+  xlab("Objective value, Weibull fitting") +
   ylab("Subclinical NAAT+ prevalence at 6 months, among full cohort") +
   labs(color = "Accepted")
 
 
 ### Check weibull fits and whether they are driving rejection
-ggplot(aes(abs(median_dx_by_540_sim - target_median_dx), accepted_subclinical))
-
 cor(
   cohort_params$objective_value,
   cohort_features$accepted_subclinical
@@ -62,6 +68,7 @@ cor(
 
 # And check distribution of objective values (if tehre's a long tail, should add something to reject that)
 hist(cohort_params$objective_value, breaks=50)
+hist(cohort_params$objective_value[accepted_index], breaks=50) # most of tail was already filtered out automatically
 
 #### Evaluate cohort characteristics and natural history results ####
 
@@ -571,7 +578,7 @@ plot_data <- plot_data %>%
                              "Three screenings + 3m micro"))),
               aes(y = median_cost_perperson, x = median, label = paste0("   ",short_intervention)), 
               hjust = 0,  vjust = 1, size = 2.5) + 
-    coord_cartesian(ylim = c(0, 16), xlim=c(0,0.38)))
+    coord_cartesian(ylim = c(0, 16), xlim=c(0,0.5)))
 
 
 # Add line segments connecting incrementally cost-effective interventions for each outcome
@@ -690,7 +697,6 @@ param_names <- c(
   proportion_micropos_subclinical_at_eot = "Proportion of micropositive recurrences NAAT+ at treatment completion",  
   duration_ratio_subclinical_symptomatic= "Relative time asymptomatic vs symptomatic",
   duration_subclinical_cv= "Coefficient of variation in asymptomatic duration",
-  subclinical_baseline_amongTB_max = "Maximum proportion with subclinical TB at treatment completion",
   subclinical_6m_amongcohort_min = "Minimum proportion of cohort with subclinical TB at 6 months",
   subclinical_6m_amongcohort_max = "Maximum proportion of cohort with subclinical TB at 6 months",
   coverage_phone =            "Coverage of phone-based screening",

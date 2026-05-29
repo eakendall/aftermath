@@ -202,7 +202,13 @@ summarize_dx <- function(sim_data, horizon = 540) {
 }
 
 weibull_mean <- function(shape, scale) {
-  scale * gamma(1 + 1 / shape)
+  log_mean <- log(scale) + lgamma(1 + 1 / shape)
+  
+  ifelse(
+    is.finite(log_mean) & log_mean < log(.Machine$double.xmax),
+    exp(log_mean),
+    Inf
+  )
 }
 
 weibull_cv <- function(shape, scale) {
@@ -405,6 +411,13 @@ fit_one_draw <- function(draw_row, i, n_total) {
       probability_ever_recur > 0 &&
       probability_ever_recur <= 1
   )
+  
+  valid_weibull_numeric =
+    is.finite(shape) &&
+    is.finite(scale) &&
+    shape > 0 &&
+    scale > 0 &&
+    is.finite(weibull_mean(shape, scale))
 }
 
 #### Timing test: one draw ####

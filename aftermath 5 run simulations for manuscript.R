@@ -186,8 +186,6 @@ run_one_cohort_feature <- function(n) {
     accepted_subclinical = accepted_subclinical,
     subclinical_baseline_among_micropos = subclinical_baseline_among_micropos,
     subclinical_6mo_amongcohort = subclinical_6mo_amongcohort,
-    fails_baseline_high =
-      subclinical_baseline_among_micropos >= cohort_params$subclinical_baseline_amongTB_max[n],
     fails_6mo_low =
       subclinical_6mo_amongcohort <= cohort_params$subclinical_6m_amongcohort_min[n],
     fails_6mo_high =

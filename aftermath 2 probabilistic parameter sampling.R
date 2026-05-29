@@ -6,9 +6,9 @@ library(conflicted)
 conflicts_prefer(dplyr::summarize)
 
 N_cohort <- 10000
-N_samples <- 500 # changed temporarily from 5000
+N_samples <- 5000 # changed temporarily from 5000
 
-date <- "20260528_first_event_model"
+date <- "20260529"
 
 set.seed(12345)
 
@@ -51,10 +51,6 @@ cohort_param_ranges <- list(
   duration_subclinical_cv = c(0.5, 1.5),
   
   #### Subclinical prevalence calibration criteria ####
-  # Baseline: maximum proportion of micropositive recurrent TB already NAAT+/sputum+
-  # at treatment completion.
-  subclinical_baseline_amongTB_max = 0.20,
-  
   # Six-month: symptom-negative, NAAT+/sputum+ recurrent TB prevalence
   # among the full post-TB cohort.
   subclinical_6m_amongcohort_min = 0.004,
