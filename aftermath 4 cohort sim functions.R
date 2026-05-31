@@ -105,12 +105,6 @@ create_cohort <- function(cohort_params)
           TRUE ~ 0
         ),
         
-        cohort$first_event_time <- ifelse(
-          cohort$subclinical_at_eot == 1,
-          0,
-          cohort$first_event_time
-        )
-        
         subclinical_duration = case_when(
           pulmonary_with_micro == 1 & sputum_first == 1 ~
             base_mean_duration_subclinical *
@@ -120,6 +114,15 @@ create_cohort <- function(cohort_params)
               scale = duration_subclinical_cv^2
             ),
           TRUE ~ NA_real_
+        )
+      )
+    
+    cohort <- cohort %>%
+      mutate(
+        first_event_time = if_else(
+          subclinical_at_eot == 1,
+          0,
+          first_event_time
         ),
         
         sputum_onset = case_when(
@@ -148,6 +151,7 @@ create_cohort <- function(cohort_params)
         )
       )
     
+
     #### For micropositive but symptom-first disease, assign NAAT positivity
     #### during the symptomatic period.
     

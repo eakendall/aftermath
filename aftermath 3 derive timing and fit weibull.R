@@ -9,7 +9,7 @@ library(progressr)
 handlers(global = TRUE)
 handlers("txtprogressbar")
 
-plan(multisession, workers = 2)
+plan(multisession, workers = 3)
 
 conflicts_prefer(dplyr::select, dplyr::filter, dplyr::summarize)
 
@@ -409,15 +409,16 @@ fit_one_draw <- function(draw_row, i, n_total) {
     valid_calibration =
       is.finite(probability_ever_recur) &&
       probability_ever_recur > 0 &&
-      probability_ever_recur <= 1
+      probability_ever_recur <= 1,
+    
+    valid_weibull_numeric =
+      is.finite(shape) &&
+      is.finite(scale) &&
+      shape > 0 &&
+      scale > 0 &&
+      is.finite(weibull_mean(shape, scale))
   )
-  
-  valid_weibull_numeric =
-    is.finite(shape) &&
-    is.finite(scale) &&
-    shape > 0 &&
-    scale > 0 &&
-    is.finite(weibull_mean(shape, scale))
+
 }
 
 #### Timing test: one draw ####

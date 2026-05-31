@@ -19,7 +19,7 @@ run_interventions <- TRUE
 apply_subclinical_filter <- FALSE
 
 # Start conservative for memory; increase if stable
-plan(multisession, workers = 2)
+plan(multisession, workers = 3)
 
 script_start_time <- Sys.time()
 
