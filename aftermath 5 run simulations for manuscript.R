@@ -19,7 +19,7 @@ run_interventions <- TRUE
 apply_subclinical_filter <- FALSE
 
 # Start conservative for memory; increase if stable
-plan(multisession, workers = 3)
+plan(multisession, workers = 1)
 
 script_start_time <- Sys.time()
 
@@ -403,30 +403,52 @@ run_one_cohort_feature <- function(n) {
   list(cohort = cohort_row, cascade = cascade_row)
 }
 
-#### Run cohort features ####
+#### Run cohort features, in chunks ####
 
 if (run_cohort_features) {
-  with_progress({
-    p <- progressor(along = seq_len(N_samples))
+  dir.create("outputs/chunks", showWarnings = FALSE, recursive = TRUE)
+  
+  feature_chunk_size <- 25
+  feature_chunks <- split(
+    seq_len(N_samples),
+    ceiling(seq_len(N_samples) / feature_chunk_size)
+  )
+  
+  cohort_chunk_files <- character(length(feature_chunks))
+  cascade_chunk_files <- character(length(feature_chunks))
+  
+  for (cc in seq_along(feature_chunks)) {
+    message("Starting cohort feature chunk ", cc, "/", length(feature_chunks), " at ", Sys.time())
     
     feature_list <- future_lapply(
-      seq_len(N_samples),
-      function(n) {
-        p(sprintf("cohort features: %s/%s", n, N_samples))
-        run_one_cohort_feature(n)
-      },
+      feature_chunks[[cc]],
+      run_one_cohort_feature,
       future.seed = TRUE
     )
-  })
+    
+    cohort_chunk <- bind_rows(lapply(feature_list, function(z) z$cohort))
+    cascade_chunk <- bind_rows(lapply(feature_list, function(z) z$cascade))
+    
+    cohort_chunk_files[cc] <- paste0("outputs/chunks/cohort_features_", date, "_chunk_", cc, ".rds")
+    cascade_chunk_files[cc] <- paste0("outputs/chunks/cascade_features_", date, "_chunk_", cc, ".rds")
+    
+    saveRDS(cohort_chunk, cohort_chunk_files[cc])
+    saveRDS(cascade_chunk, cascade_chunk_files[cc])
+    
+    rm(feature_list, cohort_chunk, cascade_chunk)
+    invisible(gc(full = TRUE))
+    
+    message("Finished cohort feature chunk ", cc, "/", length(feature_chunks), " at ", Sys.time())
+  }
   
-  cohort_features <- bind_rows(lapply(feature_list, `[[`, "cohort"))
-  cascade_features <- bind_rows(lapply(feature_list, `[[`, "cascade"))
+  cohort_features <- bind_rows(lapply(cohort_chunk_files, readRDS))
+  cascade_features <- bind_rows(lapply(cascade_chunk_files, readRDS))
   
-  rm(feature_list)
-  invisible(gc(full = TRUE))
-  
-  saveRDS(cohort_features, file = paste0("outputs/cohort_features_", date, ".rds"))
-  saveRDS(cascade_features, file = paste0("outputs/cascade_features_", date, ".rds"))
+  saveRDS(cohort_features, paste0("outputs/cohort_features_", date, ".rds"))
+  saveRDS(cascade_features, paste0("outputs/cascade_features_", date, ".rds"))
+} else {
+  cohort_features <- readRDS(paste0("outputs/cohort_features_", date, ".rds"))
+  cascade_features <- readRDS(paste0("outputs/cascade_features_", date, ".rds"))
 }
 
 # cohort features diagnostic: 
@@ -535,32 +557,58 @@ run_one_intervention_set <- function(n) {
   out
 }
 
-#### Run interventions ####
+#### Run interventions, in chunks ####
 
 if (run_interventions) {
-  with_progress({
-    p <- progressor(along = seq_len(N_samples))
+  dir.create("outputs/chunks", showWarnings = FALSE, recursive = TRUE)
+  
+  intervention_chunk_size <- 10
+  intervention_chunks <- split(
+    seq_len(N_samples),
+    ceiling(seq_len(N_samples) / intervention_chunk_size)
+  )
+  
+  result_chunk_files <- character(length(intervention_chunks))
+  
+  for (cc in seq_along(intervention_chunks)) {
+    message("Starting intervention chunk ", cc, "/", length(intervention_chunks), " at ", Sys.time())
     
     results_by_sim <- future_lapply(
-      seq_len(N_samples),
-      function(n) {
-        p(sprintf("interventions: %s/%s", n, N_samples))
-        run_one_intervention_set(n)
-      },
+      intervention_chunks[[cc]],
+      run_one_intervention_set,
       future.seed = TRUE
     )
-  })
+    
+    results_chunk <- vector("list", length(intervention_names))
+    names(results_chunk) <- intervention_names
+    
+    for (intervention in intervention_names) {
+      results_chunk[[intervention]] <- bind_rows(
+        lapply(results_by_sim, function(z) z[[intervention]])
+      )
+    }
+    
+    result_chunk_files[cc] <- paste0("outputs/chunks/results_", date, "_chunk_", cc, ".rds")
+    saveRDS(results_chunk, result_chunk_files[cc])
+    
+    rm(results_by_sim, results_chunk)
+    invisible(gc(full = TRUE))
+    
+    message("Finished intervention chunk ", cc, "/", length(intervention_chunks), " at ", Sys.time())
+  }
+  
+  results_chunks <- lapply(result_chunk_files, readRDS)
   
   results <- vector("list", length(intervention_names))
   names(results) <- intervention_names
   
   for (intervention in intervention_names) {
     results[[intervention]] <- bind_rows(
-      lapply(results_by_sim, `[[`, intervention)
+      lapply(results_chunks, function(z) z[[intervention]])
     )
   }
   
-  rm(results_by_sim)
+  rm(results_chunks)
   invisible(gc(full = TRUE))
   
   if (apply_subclinical_filter) {
@@ -568,5 +616,44 @@ if (run_interventions) {
   } else {
     saveRDS(results, paste0("outputs/results_no_subclinical_filter_", date, ".RDS"))
   }
+} else {
+  if (apply_subclinical_filter) {
+    results <- readRDS(paste0("outputs/results_aftermath_", date, ".RDS"))
+  } else {
+    results <- readRDS(paste0("outputs/results_no_subclinical_filter_", date, ".RDS"))
+  }
 }
+
+# if (run_interventions) {
+#   with_progress({
+#     p <- progressor(along = seq_len(N_samples))
+#     
+#     results_by_sim <- future_lapply(
+#       seq_len(N_samples),
+#       function(n) {
+#         p(sprintf("interventions: %s/%s", n, N_samples))
+#         run_one_intervention_set(n)
+#       },
+#       future.seed = TRUE
+#     )
+#   })
+#   
+#   results <- vector("list", length(intervention_names))
+#   names(results) <- intervention_names
+#   
+#   for (intervention in intervention_names) {
+#     results[[intervention]] <- bind_rows(
+#       lapply(results_by_sim, `[[`, intervention)
+#     )
+#   }
+#   
+#   rm(results_by_sim)
+#   invisible(gc(full = TRUE))
+#   
+#   if (apply_subclinical_filter) {
+#     saveRDS(results, paste0("outputs/results_aftermath_", date, ".RDS"))
+#   } else {
+#     saveRDS(results, paste0("outputs/results_no_subclinical_filter_", date, ".RDS"))
+#   }
+# }
 
