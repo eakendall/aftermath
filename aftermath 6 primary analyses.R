@@ -1,39 +1,262 @@
+# Analyze outputs after running create_cohort and run_interventions
+
+### Identify appropriate objective-value filter based on fit distributions
+
+plot_weibull_outcomes_by_objective <- function(
+    cohort_params,
+    n_bins = 10,
+    save_path = NULL
+) {
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(stringr)
+  
+  plot_data <- cohort_params %>%
+    mutate(
+      median_dx_error = median_dx_by_540_sim - target_median_dx,
+      p25_dx_error = p25_dx_by_540_sim - target_p25_dx,
+      p75_dx_error = p75_dx_by_540_sim - target_p75_dx,
+      prop90_error = prop_dx_le_90_among_dx540_sim - target_prop_dx_le_90,
+      prop360_error = prop_dx_le_360_among_dx540_sim - target_prop_dx_le_360,
+      objective_bin = ntile(objective_value, n_bins),
+      objective_bin_label = paste0(
+        "Q", objective_bin, "\n",
+        round(objective_value, 0)
+      )
+    ) %>%
+    select(
+      draw,
+      objective_value,
+      objective_bin,
+      objective_bin_label,
+      recurrence_shape,
+      recurrence_scale,
+      recurrence_time_mean,
+      recurrence_time_cv,
+      probability_dx540_given_recur,
+      probability_ever_recur,
+      median_dx_error,
+      p25_dx_error,
+      p75_dx_error,
+      prop90_error,
+      prop360_error,
+      mean_symptom_duration_by_540_sim,
+      mean_subclinical_duration_by_540_sim,
+      prop_first_event_le_7_among_dx540_sim,
+      prop_first_event_le_30_among_dx540_sim,
+      prop_symptom_onset_le_7_among_dx540_sim,
+      prop_symptom_onset_le_30_among_dx540_sim,
+      prop_sputum_first_by_540_sim
+    ) %>%
+    pivot_longer(
+      cols = -c(draw, objective_value, objective_bin, objective_bin_label),
+      names_to = "quantity",
+      values_to = "value"
+    ) %>%
+    filter(is.finite(value), is.finite(objective_value)) %>%
+    mutate(
+      value_plot = case_when(
+        quantity %in% c(
+          "objective_value",
+          "recurrence_scale",
+          "recurrence_time_mean",
+          "recurrence_time_cv"
+        ) & value > 0 ~ log10(value),
+        TRUE ~ value
+      ),
+      quantity = recode(
+        quantity,
+        recurrence_shape = "Weibull shape",
+        recurrence_scale = "log10 Weibull scale",
+        recurrence_time_mean = "log10 Weibull mean time",
+        recurrence_time_cv = "log10 Weibull CV",
+        probability_dx540_given_recur = "P(diagnosed by 540 | recur)",
+        probability_ever_recur = "P(eventual recurrence)",
+        median_dx_error = "Median dx timing error",
+        p25_dx_error = "P25 dx timing error",
+        p75_dx_error = "P75 dx timing error",
+        prop90_error = "Dx by 90d error",
+        prop360_error = "Dx by 360d error",
+        mean_symptom_duration_by_540_sim = "Mean symptom duration",
+        mean_subclinical_duration_by_540_sim = "Mean subclinical duration",
+        prop_first_event_le_7_among_dx540_sim = "First event <=7d",
+        prop_first_event_le_30_among_dx540_sim = "First event <=30d",
+        prop_symptom_onset_le_7_among_dx540_sim = "Symptom onset <=7d",
+        prop_symptom_onset_le_30_among_dx540_sim = "Symptom onset <=30d",
+        prop_sputum_first_by_540_sim = "Sputum-first among dx540"
+      ),
+      quantity = str_wrap(quantity, width = 24)
+    ) %>%
+    group_by(quantity) %>%
+    filter(n() >= 5, length(unique(value_plot)) >= 2) %>%
+    ungroup()
+  
+  p <- ggplot(
+    plot_data,
+    aes(x = factor(objective_bin), y = value_plot)
+  ) +
+    geom_violin(trim = TRUE, alpha = 0.6) +
+    geom_boxplot(width = 0.15, outlier.shape = NA) +
+    facet_wrap(~ quantity, scales = "free_y", ncol = 4) +
+    theme_minimal() +
+    xlab("Objective value decile") +
+    ylab("Outcome / fit indicator value") +
+    ggtitle("Weibull fit indicators by objective-value decile") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      strip.text = element_text(size = 8)
+    )
+  
+  if (!is.null(save_path)) {
+    ggsave(save_path, p, width = 14, height = 10)
+  }
+  
+  return(p)
+}
+
+plot_weibull_outcomes_by_objective(
+  cohort_params,
+  n_bins = 10,
+  save_path = "outputs/weibull_outcomes_by_objective_decile.pdf"
+)
+
+#simpler version: 
+
+plot_weibull_errors_by_objective <- function(cohort_params, cohort_features, save_path = NULL) {
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(stringr)
+  
+  plot_data <- cohort_params %>%
+    mutate(
+      accepted_subclinical = cohort_features$accepted_subclinical,
+      accepted_subclinical = factor(
+        accepted_subclinical,
+        levels = c(TRUE, FALSE),
+        labels = c("Accepted", "Rejected")
+      ),
+      median_dx_error = median_dx_by_540_sim - target_median_dx,
+      p25_dx_error = p25_dx_by_540_sim - target_p25_dx,
+      p75_dx_error = p75_dx_by_540_sim - target_p75_dx,
+      prop90_error = prop_dx_le_90_among_dx540_sim - target_prop_dx_le_90,
+      prop360_error = prop_dx_le_360_among_dx540_sim - target_prop_dx_le_360
+    ) %>%
+    select(
+      objective_value,
+      accepted_subclinical,
+      median_dx_error,
+      p25_dx_error,
+      p75_dx_error,
+      prop90_error,
+      prop360_error
+    ) %>%
+    pivot_longer(
+      cols = -c(objective_value, accepted_subclinical),
+      names_to = "quantity",
+      values_to = "value"
+    ) %>%
+    filter(is.finite(objective_value), is.finite(value), objective_value > 0) %>%
+    mutate(
+      log10_objective = log10(objective_value),
+      quantity = recode(
+        quantity,
+        median_dx_error = "Median dx timing error",
+        p25_dx_error = "P25 dx timing error",
+        p75_dx_error = "P75 dx timing error",
+        prop90_error = "Dx by 90d proportion error",
+        prop360_error = "Dx by 360d proportion error"
+      )
+    )
+  
+  p <- ggplot(plot_data, aes(x = log10_objective, y = value)) +
+    geom_point(aes(color = accepted_subclinical), alpha = 0.35, size=0.2) +
+    geom_smooth(se = FALSE, color = "blue") +
+    geom_vline(
+      xintercept = log10(quantile(cohort_params$objective_value, 0.9, na.rm = TRUE)),
+      linetype = "dashed",
+      color = "red"
+    ) +
+    scale_color_manual(
+      values = c("Accepted" = "black", "Rejected" = "red"),
+      name = "6-month subclinical\ncalibration"
+    ) +
+    facet_wrap(~ quantity, scales = "free_y") +
+    theme_minimal() +
+    xlab("log10(objective value)") +
+    ylab("Target error") +
+    ggtitle("Target errors by Weibull objective value")
+  
+  if (!is.null(save_path)) {
+    ggsave(save_path, p, width = 11, height = 7)
+  }
+  
+  return(p)
+}
+
+plot_weibull_errors_by_objective(
+  cohort_params, cohort_features, 
+  save_path = "outputs/weibull_errors_by_objective.pdf"
+)
+
+quantile(cohort_params$objective_value, 0.6)
+quantile(cohort_params$objective_value, 0.7)
+quantile(cohort_params$objective_value, 0.8)
+quantile(cohort_params$objective_value, 0.9)
+
+log10(quantile(cohort_params$objective_value, 0.9))
+# based on visual inspection, using this as cutoff for objective-value filter
+
 #### Filtered and unfiltered results objects ####
 
-if (apply_subclinical_filter) 
-{
-  results_filtered <- results
-  results_unfiltered <- NULL
-  } else{
-  results_unfiltered <- results
+valid_index <- cohort_params$valid_weibull_numeric & 
+  cohort_params$objective_value < quantile(cohort_params$objective_value, 0.9)
+
+results_unfiltered <- results
+
+if (apply_subclinical_filter) {
   
-  accepted_index <- cohort_features$accepted_subclinical == 1
+  keep_index <- valid_index
   
-  results_filtered <- lapply(
-    results_unfiltered,
-    function(x) x[accepted_index, ]
-  )
+} else {
+  
+  keep_index <- cohort_features$accepted_subclinical == 1 &
+    valid_index
+  
 }
+
+results_filtered <- lapply(
+  results_unfiltered,
+  function(x) x[keep_index, ]
+)
+
+results_main <- results_filtered
+cohort_params_main <- cohort_params[keep_index, ]
+cohort_features_main <- cohort_features[keep_index, ]
+cascade_features_main <- cascade_features[keep_index, ]
 
 #### Quick checks - may be redundant ####
 
-mean(cohort_features$accepted_subclinical)
+sum(cohort_features$accepted_subclinical); mean(cohort_features$accepted_subclinical)
+sum(valid_index); mean(valid_index)
+sum(keep_index); mean(keep_index)
+cohort_features$valid_weibull_numeric <- cohort_params$valid_weibull_numeric
+cohort_features$weibull_objective <- cohort_params$objective_value
+cohort_features_main$valid_weibull_numeric <- cohort_params_main$valid_weibull_numeric
+cohort_features_main$weibull_objective <- cohort_params_main$objective_value
 
 cohort_features %>%
-  count(fails_baseline_high, fails_6mo_low, fails_6mo_high) %>%
+  count(fails_6mo_low, fails_6mo_high, accepted_subclinical, valid_weibull_numeric) %>%
   mutate(prop = n / sum(n))
 
 cohort_features %>%
   ggplot(aes(
-    x = subclinical_baseline_among_micropos,
+    x = weibull_objective,
     y = subclinical_6mo_amongcohort,
-    color = factor(accepted_subclinical)
+    color = factor(keep_index)
   )) +
   geom_point(alpha = 0.5) +
-  geom_vline(
-    xintercept = cohort_params$subclinical_baseline_amongTB_max[1],
-    linetype = "dashed"
-  ) +
   geom_hline(
     yintercept = cohort_params$subclinical_6m_amongcohort_min[1],
     linetype = "dashed"
@@ -43,22 +266,29 @@ cohort_features %>%
     linetype = "dashed"
   ) +
   theme_minimal() +
-  xlab("Subclinical NAAT+ at treatment completion, among micropositive recurrences") +
+  xlab("Objective value, Weibull fitting") +
   ylab("Subclinical NAAT+ prevalence at 6 months, among full cohort") +
   labs(color = "Accepted")
 
+# There are a few that fit all our data and have near-immediate recurrence afte treatment. 
+
+# summary(cohort_features$subclinical_6mo_amongcohort[cohort_params$prop_first_event_le_7_among_dx540 > 0.75])
+# 
+# which(cohort_params$prop_first_event_le_7_among_dx540 > 0.9 & keep_index & cohort_params$objective_value < 2000)
+# 
+# plotcohort <- create_cohort(cohort_params[1,])
+# testcohort <- apply_intervention(cohort = plotcohort, 
+#                                  design = screening_design_guidelines, 
+#                                  intervention_parameters = intervention_parameters, cohort_params = cohort_params)
+# plot_screening(testcohort %>% #10% sample of rows
+#                  sample_n(size = nrow(testcohort)/10), screening_design = screening_design_guidelines)
 
 #### Evaluate cohort characteristics and natural history results ####
 
-head(cohort_features)
-cohort_features[,] %>% summarise_all(median)
-cohort_features[,] %>% summarise_all(mean)
-
-sum(cohort_features$accepted_subclinical)
-mean(cohort_features$accepted_subclinical)
+head(cohort_features_main)
 
 rbind(
-  cohort_features[cohort_features$accepted_subclinical == 1, ] %>%
+  cohort_features_main %>%
     summarise_all(function(x) median(x, na.rm = TRUE)),
   cohort_features[cohort_features$accepted_subclinical == 1, ] %>%
     summarise_all(function(x) quantile(x, 0.025, na.rm = TRUE)),
@@ -67,7 +297,7 @@ rbind(
 )
 
 rbind(
-  cohort_features[cohort_features$accepted_subclinical == 1, ] %>%
+  cohort_features_main %>%
     summarise_all(function(x) median(x / 30, na.rm = TRUE)),
   cohort_features[cohort_features$accepted_subclinical == 1, ] %>%
     summarise_all(function(x) quantile(x / 30, 0.025, na.rm = TRUE)),
@@ -76,19 +306,70 @@ rbind(
 )
 
 cohort_features %>%
-  count(fails_baseline_high, fails_6mo_low, fails_6mo_high) %>%
+  count(fails_6mo_low, fails_6mo_high, !valid_index) %>%
   mutate(prop = n / sum(n))
+
+quantile(cohort_params_main$prop_symptom_onset_le_30_among_dx540_sim, c(0.025, 0.5,0.975))
+
+
+
+
+### Figure 2: Example screening plot for single cohort ###
+
+meanparams <- cohort_params_main %>%
+  summarise(across(where(is.numeric), median, na.rm = TRUE)) %>%
+  as.list()
+plotcohort <- create_cohort(cohort_params = meanparams)
+check_subclinical(plotcohort, cohort_params = meanparams)
+intervention_parameters <- list(
+  coverage = list("phone" = meanparams$coverage_phone, 
+                  "home" = meanparams$coverage_phone * meanparams$coverage_home_reduction),
+  sensitivity_symptoms = list("home" = meanparams$sensitivity_symptoms_home, 
+                              "phone" = meanparams$sensitivity_symptoms_home * meanparams$sensitivity_symptoms_phone_reduction),
+  success_sputum = list("home" = meanparams$success_sputum_home, 
+                        "phone" = meanparams$success_sputum_home * meanparams$success_sputum_phone_reduction))
+
+
+testcohort <- apply_intervention(cohort = plotcohort, 
+                                 design = screening_design_guidelines, #screening_design_6m_sx,
+                                 intervention_parameters = intervention_parameters, cohort_params = meanparams)
+check_subclinical(testcohort, cohort_params = meanparams)
+large <- plot_screening(cohort = testcohort,
+                        screening_design = screening_design_guidelines, #screening_design_6m_sx, 
+                        colorfill = TRUE) + ylim(0,N_cohort*0.105)
+small <- plot_screening(cohort = testcohort %>% #10% sample of rows
+                          sample_n(size = 1000),
+                        screening_design = screening_design_guidelines, #screening_design_6m_sx, 
+                        colorfill = TRUE) + ylim(0,105)
+small
+large  
+
+library(cowplot)
+# arrange as two panels side by side, A large labeled as full cohort and B small labeled as random 20% subset
+final_plot <- plot_grid(
+  large + theme(legend.position = "none") + labs(tag = "A") + ggtitle(paste0("Full Cohort (N=",format(N_cohort, big.mark = ",", scientific = FALSE),")")) +
+    theme(plot.tag = element_text(size = 16, face = "bold", hjust = -0.1, vjust = 1.5)),
+  small + labs(tag = "B") + ggtitle("Random N=1,000 Subset") +
+    theme(plot.tag = element_text(size = 16, face = "bold", hjust = -0.1, vjust = 1.5),
+          # no y axis label
+          axis.title.y = element_blank()),
+  ncol = 2,
+  rel_widths = c(1, 1)
+)
+final_plot
+pdf(file = "Figure2_screening_example.pdf", width = 12, height = 8)
+final_plot
+dev.off()
+
 
 #### Figure 3: cascade plot ####
 
-cascade_features[,] %>%
-  filter(accepted_subclinical == 1) %>%
+cascade_features_main[,] %>%
   summarise_all(median)
 
-cascade_features$n <- seq_len(nrow(cascade_features))
+cascade_features_main$n <- seq_len(nrow(cascade_features_main))
 
-plotdata <- cascade_features %>%
-  filter(accepted_subclinical == 1) %>%
+plotdata <- cascade_features_main %>%
   mutate(
     recur_start = 0,
     recur_end = cumulative_incidence,
@@ -98,7 +379,7 @@ plotdata <- cascade_features %>%
     
     before_6mo_start = 0,
     before_6mo_end = cumulative_incidence - TB_beyond_6mo,
-    before_6mo_label = "Too early (<6mo)",
+    before_6mo_label = "Too early (all <6mo)",
     before_6mo_proportion = (cumulative_incidence - TB_beyond_6mo) / cumulative_incidence,
     before_6mo_group = "Timing of recurrence",
     
@@ -110,7 +391,7 @@ plotdata <- cascade_features %>%
     
     after18mo_start = cumulative_incidence - (TB_beyond_6mo - TB_beyond6_before18),
     after18mo_end = cumulative_incidence,
-    after18mo_label = "Too late (>18mo)",
+    after18mo_label = "Too late (all >18mo)",
     after18mo_proportion = (TB_beyond_6mo - TB_beyond6_before18) / cumulative_incidence,
     after18mo_group = "Timing of recurrence",
     
@@ -134,13 +415,13 @@ plotdata <- cascade_features %>%
     
     undetected_start = sxatvisit_start,
     undetected_end = sxatvisit_start + (symptomatic_at_visit - detected_and_linked),
-    undetected_label = "Missed",
+    undetected_label = "Missed during visit",
     undetected_proportion = (symptomatic_at_visit - detected_and_linked) / symptomatic_at_visit,
     undetected_group = "Outcome of visit",
     
     detectedlinked_start = sxatvisit_start + (symptomatic_at_visit - detected_and_linked),
     detectedlinked_end = sxatvisit_start + symptomatic_at_visit,
-    detectedlinked_label = "Detected (early)",
+    detectedlinked_label = "Detected during visit",
     detectedlinked_proportion = detected_and_linked / symptomatic_at_visit,
     detectedlinked_group = "Outcome of visit",
     
@@ -299,9 +580,24 @@ plotdata %>% filter(outcome == "sxatvisit") %>% summarise(quantile(proportion, c
 plotdata %>% filter(outcome == "detectedlinked") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
 plotdata %>% filter(outcome == "averted") %>% summarise(quantile(proportion, c(0.5, 0.025, 0.975)))
 
-#### Look at intervention results ####
+cascade_features_main %>%
+  summarise(
+    detected_duration_median =
+      median(duration_soc_detected_61218, na.rm = TRUE),
+    detected_duration_lci =
+      quantile(duration_soc_detected_61218, 0.025, na.rm = TRUE),
+    detected_duration_uci =
+      quantile(duration_soc_detected_61218, 0.975, na.rm = TRUE),
+    
+    not_detected_duration_median =
+      median(duration_notdetected_61218, na.rm = TRUE),
+    not_detected_duration_lci =
+      quantile(duration_notdetected_61218, 0.025, na.rm = TRUE),
+    not_detected_duration_uci =
+      quantile(duration_notdetected_61218, 0.975, na.rm = TRUE)
+  )
 
-results_main <- results_filtered
+#### Look at intervention results ####
 
 cbind(
   lapply(results_main, function(x)
@@ -401,6 +697,61 @@ pairwise_diffs <-
       ))
   )
 
+pairwise_props$earlier_three
+pairwise_diffs$earlier_three
+
+pairwise_props$earlier_two
+pairwise_diffs$earlier_two
+
+# Abstract incremental cost of sputum: 
+#### Incremental cost per additional case detected:
+#### earlier_three_sputum vs earlier_three ####
+icer_sputum_vs_symptoms <- tibble(
+  incremental_cost =
+    results_main$earlier_three_sputum$cost -
+    results_main$earlier_three$cost,
+  
+  incremental_detections =
+    results_main$earlier_three_sputum$detections -
+    results_main$earlier_three$detections,
+  
+  incremental_cost_per_case_detected =
+    incremental_cost / incremental_detections
+)
+
+icer_sputum_vs_symptoms %>%
+  summarise(
+    median = median(incremental_cost_per_case_detected, na.rm = TRUE),
+    lci = quantile(incremental_cost_per_case_detected, 0.025, na.rm = TRUE),
+    uci = quantile(incremental_cost_per_case_detected, 0.975, na.rm = TRUE),
+    pct_nonpositive_incremental_detection =
+      mean(incremental_detections <= 0, na.rm = TRUE) * 100
+  )
+
+compare_single_visit <- function(month = 3, results_obj, cohort_n)
+{
+  swab <- paste0(month, "m_swab")
+  sx <- paste0(month, "m_sx")
+  
+  tibble(
+    additional_detection = results_obj[[swab]]$detections / results_obj[[swab]]$recurrences -
+      results_obj[[sx]]$detections / results_obj[[sx]]$recurrences,
+    relative_symptomatic_time_averted = results_obj[[swab]]$symptomatic_months_averted /
+      results_obj[[sx]]$symptomatic_months_averted,
+    relative_infectious_time_averted = results_obj[[swab]]$infectious_months_averted /
+      results_obj[[sx]]$infectious_months_averted,
+    additional_cost_per_survivor = (results_obj[[swab]]$cost - results_obj[[sx]]$cost) / cohort_n
+  ) %>%
+    summarise(across(everything(), ~ paste0(
+      round(median(.x, na.rm=TRUE), 2), " (",
+      round(quantile(.x, 0.025, na.rm=TRUE), 2), "-",
+      round(quantile(.x, 0.975, na.rm=TRUE), 3), ")"
+    )))
+}
+
+compare_single_visit(3, results_obj = results_main, cohort_n = N_cohort)
+compare_single_visit(6, results_obj = results_main, cohort_n = N_cohort)
+
 ########
 # Figure 4 
 #########
@@ -459,14 +810,14 @@ plot_data <- combined_results %>%
     median_proportion_detected = median(proportion_detected, na.rm=T),
     median_symptomatic_averted = median(symptomatic_averted, na.rm=T),
     median_infectious_averted = median(infectious_averted, na.rm=T),
-    uci_cost_perperson = quantile(cost/N_cohort, 0.975, na.rm=T),
-    lci_cost_perperson = quantile(cost/N_cohort, 0.025, na.rm=T),
-    uci_proportion_detected = quantile(proportion_detected, 0.975, na.rm=T),
-    lci_proportion_detected = quantile(proportion_detected, 0.025, na.rm=T),
-    uci_symptomatic_averted = quantile(symptomatic_averted, 0.975, na.rm=T),
-    lci_symptomatic_averted = quantile(symptomatic_averted, 0.025, na.rm=T),
-    uci_infectious_averted = quantile(infectious_averted, 0.975, na.rm=T),
-    lci_infectious_averted = quantile(infectious_averted, 0.025, na.rm=T),
+    uci_cost_perperson = quantile(cost/N_cohort, 0.75, na.rm=T),
+    lci_cost_perperson = quantile(cost/N_cohort, 0.25, na.rm=T),
+    uci_proportion_detected = quantile(proportion_detected, 0.75, na.rm=T),
+    lci_proportion_detected = quantile(proportion_detected, 0.25, na.rm=T),
+    uci_symptomatic_averted = quantile(symptomatic_averted, 0.75, na.rm=T),
+    lci_symptomatic_averted = quantile(symptomatic_averted, 0.25, na.rm=T),
+    uci_infectious_averted = quantile(infectious_averted, 0.75, na.rm=T),
+    lci_infectious_averted = quantile(infectious_averted, 0.25, na.rm=T),
     .groups = 'drop'
   ) 
 plot_data <- plot_data %>%
@@ -558,7 +909,7 @@ plot_data <- plot_data %>%
                              "Three screenings + 3m micro"))),
               aes(y = median_cost_perperson, x = median, label = paste0("   ",short_intervention)), 
               hjust = 0,  vjust = 1, size = 2.5) + 
-    coord_cartesian(ylim = c(0, 16), xlim=c(0,0.38)))
+    coord_cartesian(ylim = c(0, 16), xlim=c(0,0.55)))
 
 
 # Add line segments connecting incrementally cost-effective interventions for each outcome
@@ -621,28 +972,44 @@ dev.off()
 
 # calculate icer of 4 screens vs 3 , and of three + sputum vs 3
 # but don't use plotdata (which is proportions), instead use raw results
+# And set added benefit to near 0 when stochasticity makes the denominators negative, to more appropriate reflect very large ICERs
 # 4 screens vs 3 screens:
-icer_4vs3_detections <- (results$four_visits_36912$cost - results$earlier_three$cost) / 
-  (results$four_visits_36912$detections - results$earlier_three$detections)
-icer_4vs3_symptomatic <- (results$four_visits_36912$cost - results$earlier_three$cost) / 
-  (results$four_visits_36912$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)
-icer_4vs3_infectious <- pmax(results$four_visits_36912$cost - results$earlier_three$cost, 0) / 
-  pmax(results$four_visits_36912$infectious_months_averted - results$earlier_three$infectious_months_averted, 0)
-icer_sputum_detections <- (results$earlier_three_sputum$cost - results$earlier_three$cost) / 
-  (results$earlier_three_sputum$detections - results$earlier_three$detections)
-icer_sputum_symptomatic <- (results$earlier_three_sputum$cost - results$earlier_three$cost) / 
-  (results$earlier_three_sputum$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)
-icer_sputum_infectious <- (results$earlier_three_sputum$cost - results$earlier_three$cost) / 
-  (results$earlier_three_sputum$infectious_months_averted - results$earlier_three$infectious_months_averted)
+icer_4vs3_detections <- (results_main$four_visits_36912$cost - results_main$earlier_three$cost) / 
+  pmax(results_main$four_visits_36912$detections - results_main$earlier_three$detections, 1e-6)
+icer_4vs3_symptomatic <- (results_main$four_visits_36912$cost - results_main$earlier_three$cost) / 
+  (results_main$four_visits_36912$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)
+icer_4vs3_infectious <- pmax(results_main$four_visits_36912$cost - results_main$earlier_three$cost, 0) / 
+  pmax(results_main$four_visits_36912$infectious_months_averted - results_main$earlier_three$infectious_months_averted, 0)
+icer_sputum_detections <- (results_main$earlier_three_sputum$cost - results_main$earlier_three$cost) / 
+  (results_main$earlier_three_sputum$detections - results_main$earlier_three$detections)
+icer_sputum_symptomatic <- (results_main$earlier_three_sputum$cost - results_main$earlier_three$cost) / 
+  (results_main$earlier_three_sputum$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)
+icer_sputum_infectious <- (results_main$earlier_three_sputum$cost - results_main$earlier_three$cost) / 
+  (results_main$earlier_three_sputum$infectious_months_averted - results_main$earlier_three$infectious_months_averted)
 
 
+
+
+
+# to calculate from results:
+#"compared to screening with symptoms at 3, 6, and 9 months after treatment completion, adding a fourth screening visit costs $x more per person, incrementally detects x% of all recurrences, and incrementally averts x% of the time with symptomatic TB and x% of the time with infectious TB that the cohort would have experienced in absence of any screening."
+quantile((results_main$four_visits_36912$cost - results_main$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$four_visits_36912$detections - results_main$earlier_three$detections)/results_main$four_visits_36912$recurrences, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$four_visits_36912$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)/results_main$four_visits_36912$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$four_visits_36912$infectious_months_averted - results_main$earlier_three$infectious_months_averted)/results_main$four_visits_36912$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
 median(icer_4vs3_detections, na.rm=T)
 quantile(icer_4vs3_detections, c(0.025, 0.975), na.rm=T)
 median(icer_4vs3_symptomatic, na.rm=T)
 quantile(icer_4vs3_symptomatic, c(0.025, 0.975), na.rm=T)
-icer
 median(icer_4vs3_infectious, na.rm=T)
 quantile(icer_4vs3_infectious, c(0.025, 0.975), na.rm=T)
+
+
+# 3 with vs without sputum
+quantile((results_main$earlier_three_sputum$cost - results_main$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$earlier_three_sputum$detections - results_main$earlier_three$detections)/results_main$earlier_three_sputum$recurrences, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$earlier_three_sputum$symptomatic_months_averted - results_main$earlier_three$symptomatic_months_averted)/results_main$earlier_three_sputum$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
+quantile((results_main$earlier_three_sputum$infectious_months_averted - results_main$earlier_three$infectious_months_averted)/results_main$earlier_three_sputum$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
 median(icer_sputum_detections, na.rm=T)
 quantile(icer_sputum_detections, c(0.025, 0.975), na.rm=T)
 median(icer_sputum_symptomatic, na.rm=T)
@@ -651,32 +1018,20 @@ median(icer_sputum_infectious, na.rm=T)
 quantile(icer_sputum_infectious, c(0.025, 0.975), na.rm=T)
 
 
-# to calculate from results:
-#"compared to screening with symptoms at 3, 6, and 9 months after treatment completion, adding a fourth screening visit costs $x more per person, incrementally detects x% of all recurrences, and incrementally averts x% of the time with symptomatic TB and x% of the time with infectious TB that the cohort would have experienced in absence of any screening."
-quantile((results$four_visits_36912$cost - results$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$four_visits_36912$detections - results$earlier_three$detections)/results$four_visits_36912$recurrences, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$four_visits_36912$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)/results$four_visits_36912$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$four_visits_36912$infectious_months_averted - results$earlier_three$infectious_months_averted)/results$four_visits_36912$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
-
-quantile((results$earlier_three_sputum$cost - results$earlier_three$cost)/N_cohort, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$earlier_three_sputum$detections - results$earlier_three$detections)/results$earlier_three_sputum$recurrences, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$earlier_three_sputum$symptomatic_months_averted - results$earlier_three$symptomatic_months_averted)/results$earlier_three_sputum$symptomatic_months_soc, c(0.5,0.025,0.975), na.rm=T)
-quantile((results$earlier_three_sputum$infectious_months_averted - results$earlier_three$infectious_months_averted)/results$earlier_three_sputum$infectious_months_soc, c(0.5,0.025,0.975), na.rm=T)
-
-
-# create a data frame of nice names for all the paramters
+# create a data frame of nice names for all the sampled paramters
 param_names <- c(
   incidence_18mo_multiplier = "Cumulative 18-month notification uncertainty multiplier",
+  incidence_18mo = "Cumulative 18-month notifications",
   proportion_micro_pos = "Proportion bacteriologically+ at diagnosis",
   # auc = "Predictive accuracy for recurrence (AUC)",
   symptom_duration_meanlog_reported = "Mean log duration of reported symptoms",
   symptom_duration_sdlog_reported = "SD log of duration of reported symptoms",
   reported_fraction_of_true_symptom_duration = "Underestimation of symptom duration",
   programmatic_symptom_duration_factor = "Increase in symptom duration under programmatic conditions",
-  proportion_ever_subclinical = "Proportion with an asymptomatic bact+ period",
+  proportion_micropos_sputum_first = "Proportion of micro+ recurrences with asymptomatic TB period",
+  proportion_micropos_subclinical_at_eot = "Proportion of micro+ recurrences micro+ at treatment completion",  
   duration_ratio_subclinical_symptomatic= "Relative time asymptomatic vs symptomatic",
   duration_subclinical_cv= "Coefficient of variation in asymptomatic duration",
-  subclinical_baseline_amongTB_max = "Maximum proportion with subclinical TB at treatment completion",
   subclinical_6m_amongcohort_min = "Minimum proportion of cohort with subclinical TB at 6 months",
   subclinical_6m_amongcohort_max = "Maximum proportion of cohort with subclinical TB at 6 months",
   coverage_phone =            "Coverage of phone-based screening",
@@ -728,22 +1083,22 @@ param_names <- c(
 # And then also include a supplemental figure re: counseling and prevention efficacy/costs:
 
 # guidelines vs soc:
-sxarray <- cbind(results$guidelines %>% 
+sxarray <- cbind(results_main$guidelines %>% 
                    reframe(sx_reduction = symptomatic_months_averted/symptomatic_months_soc*100, ), 
-                 as.data.frame(cohort_params))[!is.na(results$guidelines$symptomatic_months_averted),]
+                 as.data.frame(cohort_params_main))[!is.na(results_main$guidelines$symptomatic_months_averted),]
 
 prcc <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results$guidelines$symptomatic_months_averted),]),
-  y = (results$guidelines %>% 
-         reframe(sx_reduction = symptomatic_months_averted/symptomatic_months_soc*100, ))[!is.na(results$guidelines$symptomatic_months_averted),],
+  X = as.data.frame((as.matrix(cohort_params_main))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
+  y = (results_main$guidelines %>% 
+         reframe(sx_reduction = symptomatic_months_averted/symptomatic_months_soc*100, ))[!is.na(results_main$guidelines$symptomatic_months_averted),],
   rank = TRUE    # Spearman rank correlation (PRCC)
   # nboot = 1000    # optional: bootstrap for CI
 )
 
 prcc_inf <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results$guidelines$symptomatic_months_averted),]),
-  y = (results$guidelines %>% 
-         reframe(sx_reduction = infectious_months_averted/infectious_months_soc*100, ))[!is.na(results$guidelines$symptomatic_months_averted),],
+  X = as.data.frame((as.matrix(cohort_params_main))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
+  y = (results_main$guidelines %>% 
+         reframe(sx_reduction = infectious_months_averted/infectious_months_soc*100, ))[!is.na(results_main$guidelines$symptomatic_months_averted),],
   rank = TRUE    # Spearman rank correlation (PRCC)
   # nboot = 1000    # optional: bootstrap for CI
 )
@@ -764,7 +1119,7 @@ prcc_results <- data.frame(
   
   mutate(
     nice_variable = recode(variable, !!!param_names),
-    nice_variable = stringr::str_wrap(nice_variable, width = 22),
+    nice_variable = stringr::str_wrap(nice_variable, width = 36),
   ) %>% 
   
   filter(abs(prcc)>0.05 | abs(prcc_inf)>0.05) %>%
@@ -805,25 +1160,25 @@ outcomes_sens <- lapply(results_main, function(x)
      (results_main$guidelines %>% select(detections, symptomatic_months_averted, infectious_months_averted))))
 
 prcc2 <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
+  X = as.data.frame((as.matrix(cohort_params_main))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
   y = (outcomes_sens$earlier_three[!is.na(results_main$guidelines$symptomatic_months_averted),])$symptomatic_months_averted,
   rank = TRUE
 )
 
 prcc2_inf <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
+  X = as.data.frame((as.matrix(cohort_params_main))[!is.na(results_main$guidelines$symptomatic_months_averted),]),
   y = (outcomes_sens$earlier_three[!is.na(results_main$guidelines$symptomatic_months_averted),])$infectious_months_averted,
   rank = TRUE    # Spearman rank correlation (PRCC)
 )
 
 prcc2_sputum <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results_main$earlier_three$symptomatic_months_averted),]),
+  X = as.data.frame((as.matrix(cohort_params_main))[!is.na(results_main$earlier_three$symptomatic_months_averted),]),
   y = (outcomes_sens$earlier_three_sputum[!is.na(results_main$earlier_three$symptomatic_months_averted),])$symptomatic_months_averted,
   rank = TRUE
 )
 
 prcc2_inf_sputum <- pcc(
-  X = as.data.frame((as.matrix(cohort_params))[!is.na(results_main$earlier_three$symptomatic_months_averted),]),
+  X = as.data.frame((as.matrix(cohort_params_main))[!is.na(results_main$earlier_three$symptomatic_months_averted),]),
   y = (outcomes_sens$earlier_three_sputum[!is.na(results_main$earlier_three$symptomatic_months_averted),])$infectious_months_averted,
   rank = TRUE    # Spearman rank correlation (PRCC)
   # nboot = 1000    # optional: bootstrap for CI
@@ -845,10 +1200,10 @@ prcc2_results <- data.frame(
   
   mutate(
     nice_variable = recode(variable, !!!param_names),
-    nice_variable = stringr::str_wrap(nice_variable, width = 22),
+    nice_variable = stringr::str_wrap(nice_variable, width = 36),
   ) %>% 
   
-  filter(abs(prcc)>0.1 | abs(prcc_inf)>0.1 | abs(prcc_sputum)>0.1 | abs(prcc_inf_sputum)>0.1) %>%
+  filter(abs(prcc)>0.05 | abs(prcc_inf)>0.05 | abs(prcc_sputum)>0.05 | abs(prcc_inf_sputum)>0.1) %>%
   pivot_longer(cols = c(prcc, prcc_inf, prcc_sputum, prcc_inf_sputum), 
                names_pattern = "(prcc)(_?inf)?(_?sputum)?", 
                names_to = c("type", "inf", "sputum"),
@@ -891,62 +1246,4 @@ grid.arrange(tornado_A, tornado_B, ncol=1)
 dev.off()
 
 
-# # compare deciles of a given parameter. 
-# # parameter: 1/symptom_underestimation_factor
-# # outcome: symptomatic_months_averted/symptomatic_months_soc
-# # scenario: earlier_three_sputum
-# # sim numbers considered:
-# results_main$earlier_three_sputum %>% 
-#   reframe(symptomatic_reduction = symptomatic_months_averted/symptomatic_months_soc*100) %>%
-#   bind_cols(cohort_params) %>%
-#   group_by(decile = ntile(1/symptom_underestimation_factor, 10)) %>%
-#   summarize(median_reduction = median(symptomatic_reduction, na.rm=T),
-#             lci_reduction = quantile(symptomatic_reduction, 0.025, na.rm=T),
-#             uci_reduction = quantile(symptomatic_reduction, 0.975, na.rm=T))
-# 
 
-
-# Figure 2: Example screening plot for single cohort ----
-
-meanparams <- lapply(cohort_params[cohort_features$accepted_subclinical == 1,], median)
-plotcohort <- create_cohort(cohort_params = meanparams)
-check_subclinical(plotcohort, cohort_params = meanparams)
-intervention_parameters <- list(
-  coverage = list("phone" = meanparams$coverage_phone, 
-                  "home" = meanparams$coverage_phone * meanparams$coverage_home_reduction),
-  sensitivity_symptoms = list("home" = meanparams$sensitivity_symptoms_home, 
-                              "phone" = meanparams$sensitivity_symptoms_home * meanparams$sensitivity_symptoms_phone_reduction),
-  success_sputum = list("home" = meanparams$success_sputum_home, 
-                        "phone" = meanparams$success_sputum_home * meanparams$success_sputum_phone_reduction))
-
-
-testcohort <- apply_intervention(cohort = plotcohort, 
-                                 design = screening_design_guidelines, #screening_design_6m_sx,
-                                 intervention_parameters = intervention_parameters, cohort_params = meanparams)
-check_subclinical(testcohort, cohort_params = meanparams)
-large <- plot_screening(cohort = testcohort,
-                        screening_design = screening_design_guidelines, #screening_design_6m_sx, 
-                        colorfill = TRUE) + ylim(0,1100)
-small <- plot_screening(cohort = testcohort %>% #10% sample of rows
-                          sample_n(size = nrow(testcohort)/10),
-                        screening_design = screening_design_guidelines, #screening_design_6m_sx, 
-                        colorfill = TRUE) + ylim(0,110)
-small
-large  
-
-library(cowplot)
-# arrange as two panels side by side, A large labeled as full cohort and B small labeled as random 20% subset
-final_plot <- plot_grid(
-  large + theme(legend.position = "none") + labs(tag = "A") + ggtitle("Full Cohort (N=10,000)") +
-    theme(plot.tag = element_text(size = 16, face = "bold", hjust = -0.1, vjust = 1.5)),
-  small + labs(tag = "B") + ggtitle("Random 10% Subset") +
-    theme(plot.tag = element_text(size = 16, face = "bold", hjust = -0.1, vjust = 1.5),
-          # no y axis label
-          axis.title.y = element_blank()),
-  ncol = 2,
-  rel_widths = c(1, 1)
-)
-final_plot
-pdf(file = "Figure2_screening_example.pdf", width = 12, height = 8)
-final_plot
-dev.off()

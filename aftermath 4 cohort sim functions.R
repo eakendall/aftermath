@@ -9,35 +9,43 @@ conflicts_prefer(dplyr::select, dplyr::filter)
 create_cohort <- function(cohort_params)
 {
   with(cohort_params, {
+    
     cohort <- data.frame(ID = 1:N)
-  
-    #### Symptomatic TB onset ####
     
-    # timing
+    #### Recurrent TB occurrence ####
     
-    scale <- recurrence_scale
-    shape <- recurrence_shape
-    
-    # total events (symptom onset)
     cohort$TB <- rbinom(
       n = N,
       size = 1,
       prob = probability_ever_recur
     )
     
-    cohort$symptom_onset [cohort$TB == 1] <- rweibull(n = sum(cohort$TB == 1), shape = shape, scale = scale)
+    n_tb <- sum(cohort$TB == 1)
     
-    # sputum+ pulmonary?
+    #### First recurrent-TB state ####
+    # recurrence_scale / recurrence_shape now describe time to first TB state:
+    # either sputum+/NAAT+ TB or symptom-screen-positive TB, whichever occurs first.
+    
+    cohort$first_event_time <- NA_real_
+    
+    cohort$first_event_time[cohort$TB == 1] <-
+      rweibull(
+        n = n_tb,
+        shape = recurrence_shape,
+        scale = recurrence_scale
+      )
+    
+    #### Micropositive pulmonary TB? ####
+    
     cohort <- cohort %>%
       mutate(
         pulmonary_with_micro = case_when(
           TB == 1 ~ rbinom(n = n(), size = 1, prob = proportion_micro_pos),
           TRUE ~ 0
         )
-      )    
+      )
     
-    #### Timing of routine diagnosis ####
-    # Use lognormal to capture trial distribution of reported symptom durations
+    #### Symptom duration before routine diagnosis ####
     
     cohort <- cohort %>%
       mutate(
@@ -52,15 +60,10 @@ create_cohort <- function(cohort_params)
               sdlog = symptom_duration_sdlog_reported
             ),
           TRUE ~ NA_real_
-        ),
-        
-        diagnosis_routine = case_when(
-          TB == 1 ~ symptom_onset + symptom_duration,
-          TRUE ~ NA_real_
         )
       )
     
-    #### Subclinical TB ####
+    #### Subclinical / sputum-first state ####
     
     symptom_duration_mean_reported <- exp(
       symptom_duration_meanlog_reported +
@@ -72,91 +75,137 @@ create_cohort <- function(cohort_params)
       reported_fraction_of_true_symptom_duration *
       programmatic_symptom_duration_factor
     
-    mean_sputumpos_symptomatic_duration_among_micropos <-
-      true_symptom_duration_mean *
-      (
-        proportion_ever_subclinical +
-          0.5 * (1 - proportion_ever_subclinical)
-      )
-    
     base_mean_duration_subclinical <-
-      mean_sputumpos_symptomatic_duration_among_micropos *
-      duration_ratio_subclinical_symptomatic /
-      proportion_ever_subclinical
+      true_symptom_duration_mean *
+      duration_ratio_subclinical_symptomatic
     
     cohort <- cohort %>%
       mutate(
-        ever_subclinical_sputumpos = case_when(
+        # Among micropositive recurrences, sputum/NAAT positivity precedes
+        # symptom-screen positivity with probability ~0.6-0.8.
+        sputum_first = case_when(
           pulmonary_with_micro == 1 ~
             rbinom(
-              prob = proportion_ever_subclinical,
+              n = n(),
               size = 1,
-              n = n()
+              prob = proportion_micropos_sputum_first
             ),
           TRUE ~ 0
-        ))
-
-    cohort <- cohort %>% mutate(
-      subclinical_duration = case_when(
-        ever_subclinical_sputumpos == 1 ~
-          base_mean_duration_subclinical *
-          rgamma(
-            n = n(),
-            shape = 1 / duration_subclinical_cv^2,
-            scale = duration_subclinical_cv^2
-          ),
-        TRUE ~ NA_real_
-      ),
-      
-      sputum_onset = case_when(
-        ever_subclinical_sputumpos == 1 ~
-          symptom_onset - subclinical_duration,
+        ),
         
-        ever_subclinical_sputumpos == 0 &
-          pulmonary_with_micro == 1 ~
-          runif(
-            n = n(),
-            min = symptom_onset,
-            max = diagnosis_routine
-          ),
+        # A small explicit baseline subclinical component among micropositive,
+        # sputum-first recurrences.
+        subclinical_at_eot = case_when(
+          pulmonary_with_micro == 1 & sputum_first == 1 ~
+            rbinom(
+              n = n(),
+              size = 1,
+              prob = proportion_micropos_subclinical_at_eot
+            ),
+          TRUE ~ 0
+        ),
         
-        TRUE ~ NA_real_
-      )
-    ) %>%
-      mutate(
-        sputum_onset = pmax(sputum_onset, 0)
+        subclinical_duration = case_when(
+          pulmonary_with_micro == 1 & sputum_first == 1 ~
+            base_mean_duration_subclinical *
+            rgamma(
+              n = n(),
+              shape = 1 / duration_subclinical_cv^2,
+              scale = duration_subclinical_cv^2
+            ),
+          TRUE ~ NA_real_
+        )
       )
     
     cohort <- cohort %>%
-       mutate(
-         diagnosis_routine_original = diagnosis_routine,
-         TB_original = TB,
-         symptom_onset_original = symptom_onset,
-         sputum_onset_original = sputum_onset
-       )
+      mutate(
+        first_event_time = if_else(
+          subclinical_at_eot == 1,
+          0,
+          first_event_time
+        ),
+        
+        sputum_onset = case_when(
+          pulmonary_with_micro == 1 & sputum_first == 1 &
+            subclinical_at_eot == 1 ~ 0,
+          
+          pulmonary_with_micro == 1 & sputum_first == 1 &
+            subclinical_at_eot == 0 ~ first_event_time,
+          
+          TRUE ~ NA_real_
+        ),
+        
+        symptom_onset = case_when(
+          TB == 1 & pulmonary_with_micro == 1 & sputum_first == 1 ~
+            sputum_onset + subclinical_duration,
+          
+          TB == 1 ~
+            first_event_time,
+          
+          TRUE ~ NA_real_
+        ),
+        
+        diagnosis_routine = case_when(
+          TB == 1 ~ symptom_onset + symptom_duration,
+          TRUE ~ NA_real_
+        )
+      )
     
-  
+
+    #### For micropositive but symptom-first disease, assign NAAT positivity
+    #### during the symptomatic period.
+    
+    cohort <- cohort %>%
+      mutate(
+        sputum_onset = case_when(
+          pulmonary_with_micro == 1 & sputum_first == 0 ~
+            runif(
+              n = n(),
+              min = symptom_onset,
+              max = diagnosis_routine
+            ),
+          TRUE ~ sputum_onset
+        )
+      )
+    
+    #### Original / no-screening values ####
+    
+    cohort <- cohort %>%
+      mutate(
+        diagnosis_routine_original = diagnosis_routine,
+        TB_original = TB,
+        symptom_onset_original = symptom_onset,
+        sputum_onset_original = sputum_onset,
+        first_event_time_original = first_event_time
+      )
+    
     #### Prediction ####
     
-      roc.curve <- simulate_auc(auc = auc)
+    roc.curve <- simulate_auc(auc = auc)
     
+    cohort$TB_risk_rank[cohort$TB == 1] <-
+      seq_len(sum(cohort$TB == 1)) / sum(cohort$TB == 1)
     
-    # assign risk rankings based on sensitivity and specificity of roc.curve for TB:
-    # First, assign scores to the TB cases such that a given prediction score cutoff of P proportion 1-P of the TB cases
-    # And then, for the non-cases, assign with probability (1-spec) at a 
-    cohort$TB_risk_rank[cohort$TB == 1] <- (1:sum(cohort$TB == 1))/sum(cohort$TB == 1)
-    cohort$nonTB_risk_rank[cohort$TB == 0] <- (1:sum(cohort$TB == 0))/sum(cohort$TB == 0)
-    for (i in 1:N)
-    {TB_status <- cohort$TB[i]
-    if (TB_status == 1)
-    {cohort$risk_score[i] <- cohort$TB_risk_rank[i]}
-    else
-    {cohort$risk_score[i] <- 1 - roc.curve$specificities[which.min(roc.curve$sensitivities > cohort$nonTB_risk_rank[i])]}
+    cohort$nonTB_risk_rank[cohort$TB == 0] <-
+      seq_len(sum(cohort$TB == 0)) / sum(cohort$TB == 0)
+    
+    for (i in 1:N) {
+      TB_status <- cohort$TB[i]
+      
+      if (TB_status == 1) {
+        cohort$risk_score[i] <- cohort$TB_risk_rank[i]
+      } else {
+        cohort$risk_score[i] <-
+          1 - roc.curve$specificities[
+            which.min(roc.curve$sensitivities > cohort$nonTB_risk_rank[i])
+          ]
+      }
     }
     
-    # but actually, we may want to target a certain % of patients, using risk quantiles: 
-    cohort <- cohort %>% arrange(risk_score) %>% mutate(risk_quantile = row_number()/n())
-  
+    cohort <- cohort %>%
+      arrange(risk_score) %>%
+      mutate(risk_quantile = row_number() / n())
+    
     return(cohort)
   })
 }
@@ -185,21 +234,26 @@ simulate_auc <- function(auc)
 
 check_subclinical <- function(cohort, cohort_params)
 {
-  # check the proportion of subclinical cases at baseline:
-   subclinical_baseline_amongTB <-
+  subclinical_baseline_amongTB <-
     mean(cohort$sputum_onset <= 0, na.rm = TRUE)
-   subclinical_6mo_amongcohort <- cohort %>% summarize(sum(sputum_onset<180 & symptom_onset >= 180, na.rm=T))/
-    cohort %>% summarize(n())
-   if (
-     subclinical_baseline_amongTB <
-     cohort_params$subclinical_baseline_amongTB_max &
-     subclinical_6mo_amongcohort >
-     cohort_params$subclinical_6m_amongcohort_min &
-     subclinical_6mo_amongcohort <
-     cohort_params$subclinical_6m_amongcohort_max
-   )
-    return(TRUE) else
-      return(FALSE)
+  
+  subclinical_6mo_amongcohort <-
+    sum(
+      cohort$sputum_onset < 180 &
+        cohort$symptom_onset >= 180,
+      na.rm = TRUE
+    ) / nrow(cohort)
+  
+  if (
+    subclinical_6mo_amongcohort >
+    cohort_params$subclinical_6m_amongcohort_min &
+    subclinical_6mo_amongcohort <
+    cohort_params$subclinical_6m_amongcohort_max
+  ) {
+    return(TRUE)
+  } else {
+    return(FALSE)
+  }
 }
 
 ### Apply screening interventions ###
@@ -213,7 +267,7 @@ check_subclinical <- function(cohort, cohort_params)
 ## estimated coverage as % of target population.
 
 # This function just says who's contacted by screening, and makes baseline adjustments to later TB based on counseling and (in commented out section) prevention.
-get_screening_coverage <- function(cohort, screening_design, cohort_params) {
+get_screening_coverage <- function(cohort, screening_design, cohort_params, intervention_parameters) {
   
   # Track screening contacts made
   covered_screening <- 
@@ -247,7 +301,7 @@ apply_screening_round <- function(
     cohort, 
     covered_screening_column,
     timing_months = 6,
-    screening_method = "symptoms", # (symptoms, micro, or both)
+    screening_method = "symptoms", # (symptoms, sputum, or both)
     screening_location = "home", # (home, phone)
     intervention_parameters
 )
@@ -277,7 +331,7 @@ apply_screening_round <- function(
         timing_months*30 >= symptom_onset ~ 
         rbinom(n = n(), size = 1, prob = intervention_parameters$sensitivity_symptoms[[screening_location]]),
       # micro screening only
-      screening_method == "micro" & 
+      screening_method == "sputum" & 
         timing_months*30 >= sputum_onset ~ 
         rbinom(n = n(), size = 1, prob = intervention_parameters$success_sputum[[screening_location]]),
       TRUE ~ 0),
@@ -295,7 +349,7 @@ apply_screening_round <- function(
 # function we'll use to apply the same steps to all 
 apply_intervention <- function(cohort, design, intervention_parameters, cohort_params) {
   # apply screening rounds
-  screened <- get_screening_coverage(cohort, design, cohort_params)
+  screened <- get_screening_coverage(cohort, design, cohort_params, intervention_parameters)
   covered_screening <- screened$covered
   cohort_screened <- screened$cohort
   
