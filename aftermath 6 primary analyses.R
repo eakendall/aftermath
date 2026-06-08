@@ -898,7 +898,8 @@ plot_data <- plot_data %>%
                          c("Three screenings, guidelines schedule (6, 12, 18m)",
                            "Three screenings + 3m micro")),
               aes(y = median_cost_perperson, x = median, label = short_intervention),
-              hjust = 1, vjust = -1, size = 2.5) +
+              hjust = 1, vjust = -1, size = 2.5,
+              show.legend = FALSE) +
     coord_cartesian(clip = "off") +
     geom_errorbar(aes(xmin = lci, xmax = uci, color = intervention), width = 0.2, alpha = 0.4, lwd=0.3) + 
     geom_errorbar(aes(ymin = lci_cost_perperson, ymax = uci_cost_perperson, color = intervention), width = 0.01, alpha = 0.4, lwd=0.3) +
@@ -908,7 +909,8 @@ plot_data <- plot_data %>%
                            c("Three screenings, guidelines schedule (6, 12, 18m)", 
                              "Three screenings + 3m micro"))),
               aes(y = median_cost_perperson, x = median, label = paste0("   ",short_intervention)), 
-              hjust = 0,  vjust = 1, size = 2.5) + 
+              hjust = 0,  vjust = 1, size = 2.5,
+              show.legend = FALSE) + 
     coord_cartesian(ylim = c(0, 16), xlim=c(0,0.55)))
 
 

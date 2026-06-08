@@ -14,8 +14,8 @@ conflicts_prefer(dplyr::select, dplyr::filter, dplyr::summarize)
 
 #### Settings ####
 
-run_cohort_features <- TRUE
-run_interventions <- TRUE
+run_cohort_features <- FALSE
+run_interventions <- FALSE
 apply_subclinical_filter <- FALSE
 
 # Start conservative for memory; increase if stable
@@ -623,37 +623,4 @@ if (run_interventions) {
     results <- readRDS(paste0("outputs/results_no_subclinical_filter_", date, ".RDS"))
   }
 }
-
-# if (run_interventions) {
-#   with_progress({
-#     p <- progressor(along = seq_len(N_samples))
-#     
-#     results_by_sim <- future_lapply(
-#       seq_len(N_samples),
-#       function(n) {
-#         p(sprintf("interventions: %s/%s", n, N_samples))
-#         run_one_intervention_set(n)
-#       },
-#       future.seed = TRUE
-#     )
-#   })
-#   
-#   results <- vector("list", length(intervention_names))
-#   names(results) <- intervention_names
-#   
-#   for (intervention in intervention_names) {
-#     results[[intervention]] <- bind_rows(
-#       lapply(results_by_sim, `[[`, intervention)
-#     )
-#   }
-#   
-#   rm(results_by_sim)
-#   invisible(gc(full = TRUE))
-#   
-#   if (apply_subclinical_filter) {
-#     saveRDS(results, paste0("outputs/results_aftermath_", date, ".RDS"))
-#   } else {
-#     saveRDS(results, paste0("outputs/results_no_subclinical_filter_", date, ".RDS"))
-#   }
-# }
 
